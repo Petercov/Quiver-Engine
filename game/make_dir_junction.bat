@@ -28,4 +28,5 @@ if '%errorlevel%' NEQ '0' (
 start bin/win32/appidlink.exe %cd%\hl2 220 hl2
 start bin/win32/appidlink.exe %cd%\episodic 220 episodic
 start bin/win32/appidlink.exe %cd%\ep2 220 ep2
+start bin/win32/appidlink.exe %cd%\hl2mp 320 hl2mp
 exit

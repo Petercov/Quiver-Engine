@@ -5,6 +5,7 @@ macro PROJECT_NAME 	"vphysics"
 
 macro SRCDIR		".."
 macro OUTBINDIR		"$BINDEFAULT"
+macro OUTBINNAME	"vphysics_bullet"
 macro BULLET_SRC	"$SRCDIR/thirdparty/bullet/src"
 
 include "$SRCDIR/_qpc_scripts/source_dll_base.qpc"

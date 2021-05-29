@@ -520,15 +520,15 @@ KeyValues *CShaderDeviceMgrBase::ReadDXSupportKeyValues()
 
 	KeyValues *pCfg = new KeyValues( "dxsupport" );
 
-	const char *pPathID = "EXECUTABLE_PATH";
-	if ( IsX360() && g_pFullFileSystem->GetDVDMode() == DVDMODE_STRICT )
-	{
-		// 360 dvd optimzation, expect it inside the platform zip
-		pPathID = "CORE";
-	}
+	//const char *pPathID = "EXECUTABLE_PATH";
+	//if ( IsX360() && g_pFullFileSystem->GetDVDMode() == DVDMODE_STRICT )
+	//{
+	//	// 360 dvd optimzation, expect it inside the platform zip
+	//	pPathID = "CORE";
+	//}
 
 	// First try to read a game-specific config, if it exists
-	if ( !pCfg->LoadFromFile( g_pFullFileSystem, SUPPORT_CFG_FILE, pPathID ) )
+	if ( !pCfg->LoadFromFile( g_pFullFileSystem, SUPPORT_CFG_FILE, "CORE" ) )
 	{
 		pCfg->deleteThis();
 		return NULL;
