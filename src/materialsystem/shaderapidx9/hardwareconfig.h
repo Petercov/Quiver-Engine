@@ -31,6 +31,7 @@ struct ShaderDeviceInfo_t;
 //-----------------------------------------------------------------------------
 #define VENDORID_NVIDIA	0x10DE
 #define VENDORID_ATI	0x1002
+#define VENDORID_INTEL  0x8086
 
 
 //-----------------------------------------------------------------------------
@@ -94,6 +95,7 @@ struct HardwareCaps_t : public MaterialAdapterInfo_t
 	HDRType_t m_HDRType;
 	char m_pShaderDLL[32];
 	ImageFormat m_ShadowDepthTextureFormat;
+	ImageFormat m_HighPrecisionShadowDepthTextureFormat;
 	ImageFormat m_NullTextureFormat;
 	int  m_nVertexTextureCount;
 	int  m_nMaxVertexTextureDimension;

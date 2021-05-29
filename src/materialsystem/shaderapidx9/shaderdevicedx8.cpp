@@ -271,13 +271,13 @@ void CShaderDeviceMgrDx8::CheckVendorDependentShadowMappingSupport( HardwareCaps
 	pCaps->m_ShadowDepthTextureFormat = ReverseDepthOnX360() ? IMAGE_FORMAT_X360_DST24F : IMAGE_FORMAT_X360_DST24;
 	pCaps->m_bSupportsShadowDepthTextures = true;
 	pCaps->m_bSupportsFetch4 = false;
+	pCaps->m_HighPrecisionShadowDepthTextureFormat = pCaps->m_ShadowDepthTextureFormat;
 	return;
 #endif
 
-	if ( IsPC() || !IsX360() )
+	if ( IsPC() )
 	{
-		bool bToolsMode = IsPC() && (CommandLine()->CheckParm( "-tools" ) != NULL);
-		bool bFound16Bit = false;
+		bool bToolsMode = IsWindows() && (CommandLine()->CheckParm( "-tools" ) != NULL);
 
 		if ( ( pCaps->m_VendorID == VENDORID_NVIDIA ) && ( pCaps->m_SupportsShaderModel_3_0  ) )	// ps_3_0 parts from nVidia
 		{
@@ -301,27 +301,37 @@ void CShaderDeviceMgrDx8::CheckVendorDependentShadowMappingSupport( HardwareCaps
 				return;
 			}
 */
-			if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, D3DFMT_D16 ) == S_OK )
+			bool bSupports16Bit = (m_pD3D->CheckDeviceFormat(nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, D3DFMT_D16) == S_OK);
+			bool bSupports24Bit = (m_pD3D->CheckDeviceFormat(nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, D3DFMT_D24S8) == S_OK);
+
+			if (bSupports24Bit || bSupports16Bit)
 			{
-				pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST16;
 				pCaps->m_bSupportsFetch4 = false;
 				pCaps->m_bSupportsShadowDepthTextures = true;
-				bFound16Bit = true;
 
-				if ( !bToolsMode )	// Tools will continue on and try for 24 bit...
-					return;
-			}
-			
-			if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, D3DFMT_D24S8 ) == S_OK )
-			{
-				pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
-				pCaps->m_bSupportsFetch4 = false;
-				pCaps->m_bSupportsShadowDepthTextures = true;
-				return;
-			}
+				// Prefer 16-bit
+				if (bSupports16Bit)
+				{
+					pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST16;
+					pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST16;
 
-			if ( bFound16Bit )		// Found 16 bit but not 24
+					if (bSupports24Bit)
+					{
+						pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+						if (bToolsMode)
+						{
+							pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+						}
+					}
+				}
+				else
+				{
+					pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+					pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+				}
+
 				return;
+			};
 		}
 		else if ( ( pCaps->m_VendorID == VENDORID_ATI ) && pCaps->m_SupportsPixelShaders_2_b )		// ps_2_b parts from ATI
 		{
@@ -332,25 +342,57 @@ void CShaderDeviceMgrDx8::CheckVendorDependentShadowMappingSupport( HardwareCaps
 				pCaps->m_bSupportsFetch4 = true;
 			}
 
-			if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, ATIFMT_D16 ) == S_OK )	// Prefer 16-bit
+			// ATI prefers the NVIDIA PCF path on their DX10 parts:
+			// http://developer.amd.com/gpu_assets/Advanced%20DX9%20Capabilities%20for%20ATI%20Radeon%20Cards_v2.pdf
+			if (!CommandLine()->CheckParm("-forceatifetch4"))
 			{
-				pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST16;
-				pCaps->m_bSupportsShadowDepthTextures = true;
-				bFound16Bit = true;
-
-				if ( !bToolsMode )	// Tools will continue on and try for 24 bit...
-					return;
-			}
-			
-			if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, ATIFMT_D24S8 ) == S_OK )
-			{
-				pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST24;
-				pCaps->m_bSupportsShadowDepthTextures = true;
-				return;
+				if (pCaps->m_bDX10Card)
+				{
+					pCaps->m_bSupportsFetch4 = false;
+				}
 			}
 
-			if ( bFound16Bit )		// Found 16 bit but not 24
+			bool bSupports16Bit = (m_pD3D->CheckDeviceFormat(nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, ATIFMT_D16) == S_OK);
+			bool bSupports24Bit = (m_pD3D->CheckDeviceFormat(nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, ATIFMT_D24S8) == S_OK);
+
+			if (bSupports24Bit || bSupports16Bit)
+			{
+				pCaps->m_bSupportsShadowDepthTextures = true;
+
+				// Prefer 16-bit
+				if (bSupports16Bit)
+				{
+					pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST16;
+					pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST16;
+
+					if (bSupports24Bit)
+					{
+						pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST24;
+						if (bToolsMode)
+						{
+							pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST24;
+						}
+					}
+				}
+				else
+				{
+					pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST24;
+					pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_ATI_DST24;
+				}
+
 				return;
+			}
+		}
+		else if ((pCaps->m_VendorID == VENDORID_INTEL) && pCaps->m_SupportsPixelShaders_2_b)		// ps_2_b parts from INTEL
+		{
+			if (m_pD3D->CheckDeviceFormat(nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, D3DUSAGE_DEPTHSTENCIL, D3DRTYPE_TEXTURE, D3DFMT_D24S8) == S_OK)
+			{
+				pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+				pCaps->m_bSupportsFetch4 = false;
+				pCaps->m_bSupportsShadowDepthTextures = true;
+				pCaps->m_HighPrecisionShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST24;
+				return;
+			}
 		}
 	}
 
