@@ -1,6 +1,6 @@
 [submodule "game/core"]
 	path = game/core
-	url = https://github.com/quiverteam/Core.git
+	url = https://github.com/Petercov/Quiver-Core.git
 [submodule "src/devtools/pyqpc"]
 	path = src/devtools/pyqpc
 	url = https://github.com/quiverteam/PyQuiverProjectCreator
