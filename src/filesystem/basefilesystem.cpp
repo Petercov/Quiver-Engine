@@ -1053,6 +1053,19 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 		return;
 	}
 
+	// lump_t fix for l4d2 maps
+	if ( header.version == 21 && header.lumps[0].fileofs == 0 )
+	{
+		DevMsg( "Detected l4d2 bsp, fixing lump struct order for compatibility\n" );
+
+		l4d2_lump_t l4d2lump;
+		V_memcpy( &l4d2lump, &header.lumps[LUMP_PAKFILE], sizeof( lump_t ) );
+
+		header.lumps[LUMP_PAKFILE].version = l4d2lump.version;
+		header.lumps[LUMP_PAKFILE].filelen = l4d2lump.filelen;
+		header.lumps[LUMP_PAKFILE].fileofs = l4d2lump.fileofs;
+	}
+
 	// Find the LUMP_PAKFILE offset
 	lump_t *packfile = &header.lumps[ LUMP_PAKFILE ];
 	if ( packfile->filelen <= sizeof( lump_t ) )
@@ -3901,6 +3914,8 @@ const char *CBaseFileSystem::FindFirstHelper( const char *pWildCard, const char 
 	{
 		pFindData->findHandle = FS_FindFirstFile( pWildCard, &pFindData->findData );
 		pFindData->currentSearchPathID = -1;
+		if ( pFindData->findHandle != INVALID_HANDLE_VALUE )
+		 	goto FileFound;
 	}
 	else
 	{
@@ -3964,7 +3979,7 @@ const char *CBaseFileSystem::FindFirst( const char *pWildCard, FileFindHandle_t 
 bool CBaseFileSystem::FindNextFileHelper( FindData_t *pFindData, int *pFoundStoreID )
 {
 	// Pack files
-	if ( m_SearchPaths[pFindData->currentSearchPathID].GetPackFile() )
+	if ( pFindData->currentSearchPathID != -1 && m_SearchPaths[pFindData->currentSearchPathID].GetPackFile() )
 	{
 		if ( m_SearchPaths[pFindData->currentSearchPathID].GetPackFile()->FindNext( pFindData ) )
 			return true;

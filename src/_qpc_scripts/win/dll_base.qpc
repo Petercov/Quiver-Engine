@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------
 // Base Dynamic Library Settings for Visual Studio
 // ---------------------------------------------------------------
+
 configuration
 {
 	compiler
@@ -15,23 +16,11 @@ configuration
 			"/Zm200" 	[$WIN32]
 		}
 	}
-}
-
-/*files
-{
-	folder "Source Files"
+	
+	post_build
 	{
-		"$SRCDIR/common/debug_dll_check.cpp" [!$SOURCESDK]
-		{
-			configuration
-			{
-				compiler
-				{
-					precompiled_header "none"
-				}
-			}
-		}
+		"copy_file" "\"$(OutDir)$(TargetName)$(TargetExt)\"" "\"$OUTBINDIR/$OUTBINNAME$OUTDLLEXT\"" [$VISUAL_STUDIO]
 	}
-}*/
+}
 
 

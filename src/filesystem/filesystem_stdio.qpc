@@ -13,7 +13,7 @@ configuration
 {
 	general
 	{
-		int_dir "$CONFIG/$PLATFORM/Stdio"
+		int_dir "$CONFIG/$PLAT_DIR/Stdio"
 	}
 
 	compiler
@@ -23,7 +23,6 @@ configuration
 			"FILESYSTEM_STDIO_EXPORTS"
 			"DONT_PROTECT_FILEIO_FUNCTIONS"
 			"PROTECTED_THINGS_ENABLE"
-			"_USE_32BIT_TIME_T"
 		}
 	}
 

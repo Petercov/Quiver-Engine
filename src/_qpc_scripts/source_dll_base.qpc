@@ -1,12 +1,11 @@
 // ---------------------------------------------------------------
 // Base Dynamic Library Settings
 // ---------------------------------------------------------------
-macro OUTBINNAME        "$SCRIPT_NAME"     [!$OUTBINNAME]
+macro OUTBINNAME        "$PROJECT_SCRIPT_NAME"     [!$OUTBINNAME]
 macro OUTBINDIR         "$BINDEFAULT"       [!$OUTBINDIR]
 macro OUTDLLEXT         "$_BIN_EXT"
 
 include "$SRCDIR/_qpc_scripts/source_base.qpc"
-
 include "$SRCDIR/_qpc_scripts/posix/dll_base.qpc" 	[$POSIX]
 include "$SRCDIR/_qpc_scripts/win/dll_base.qpc" 	[$WINDOWS]
 
@@ -14,11 +13,9 @@ configuration
 {
 	general
 	{
-		out_name "$OUTBINNAME"
-		
-		// out_dir "./$OUTBINDIR"
-		out_dir "./$CONFIG/$_SUBDIRSUFFIX"
-		int_dir "./$CONFIG/$_SUBDIRSUFFIX"
+		out_name    "$OUTBINNAME"
+		out_dir     "$OUT_DIR"
+		build_dir   "$BUILD_DIR"
 		
 		configuration_type "dynamic_library"
 
@@ -39,7 +36,7 @@ configuration
 	
 	linker
 	{
-		output_file		"./$OUTBINDIR/$OUTBINNAME"
+		output_file		"./$OUTBINDIR/$OUTBINNAME" [!$VISUAL_STUDIO]
 		debug_file		"./$OUTBINDIR/$OUTBINNAME"
 		
 		libraries

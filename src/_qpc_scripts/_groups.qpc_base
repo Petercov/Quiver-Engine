@@ -6,19 +6,28 @@ group "gamedlls" "game" "binaries" "everything"
 {
 	folder "Game"
 	{
-		folder "Client"
+		folder "Game Binaries"
 		{
-			"client"
-		}
-
-		folder "Server"
-		{
-			"server"
-		}
-
-		folder "GameUI"
-		{
-			"gameui_client"
+			folder "Episodic"	[$EPISODIC]
+			{
+				"client_episodic"
+				"server_episodic"
+				"gameui_episodic"
+			}
+			
+			folder "HL2"		[$HL2]
+			{
+				"client_hl2"
+				"server_hl2"
+				"gameui_hl2"
+			}
+			
+			folder "HL2MP"		[$HL2MP]
+			{
+				"client_hl2mp"
+				"server_hl2mp"
+				"gameui_hl2mp"
+			}
 		}
 	}
 
@@ -28,24 +37,35 @@ group "gamedlls" "game" "binaries" "everything"
 	}
 }
 
-group "hammer"
+group "hammer" "utils" "everything"
 {
-	"hammer_launcher"
-	"hammer_dll"
-	"vbsp"
-	"vrad_launcher"
-	"vrad_dll"
-	"vvis_launcher"
-	"vvis_dll"
-}
-
-group "physics"
-{
-	folder "Game"
+	folder "Libraries"
 	{
-		"vphysics"
+		"datamodel"
 	}
 	
+	folder "Utils"
+	{
+		folder "Hammer Editor"
+		{
+			"hammer_dll"
+			"hammer_launcher"
+			"FileSystemOpenDialog"
+		}
+	
+		folder "Map Compilers"
+		{
+			"vbsp"
+			"vvis_dll"
+			"vvis_launcher"
+			"vrad_dll"
+			"vrad_launcher"
+		}
+	}
+}
+
+group "physics_libs" "physics" "everything"
+{
 	folder "Libraries"
 	{
 		folder "Bullet 2"
@@ -56,6 +76,14 @@ group "physics"
 			"BulletSoftBody"
 			"LinearMath"
 		}
+	}
+}
+
+group "physics" "everything"
+{
+	folder "Game"
+	{
+		"vphysics"
 	}
 }
 
@@ -70,7 +98,7 @@ group "shaders"
 	"stdshader_dx9"
 }
 
-group "tools"
+group "tools" "everything"
 {
 	folder "Engine Tools"
 	{
@@ -81,7 +109,21 @@ group "tools"
 		"toolutils"
 		"vcdblock"
 		"vmt"
+		"mapedit"
 	}
+}
+
+group "vmpi_group"
+{
+	"vmpi"
+	"vmpi_job_search"
+	"vmpi_job_watch"
+	"vmpi_services_watch"
+	"vmpi_service"
+	"vmpi_transfer"
+	"vmpi_service_install"
+	"vmpi_service_ui"
+	"WaitAndRestart"
 }
 
 group "utils" "everything"
@@ -97,10 +139,6 @@ group "utils" "everything"
 		}
 		
 		"mxtoolkitwin32"
-	}
-
-	folder "Game"
-	{
 		"vstdlib"
 	}
 
@@ -139,20 +177,9 @@ group "utils" "everything"
 			"vrad_launcher"
 		}
 		
-		"elementviewer"
-		"glview"
-
 		folder "vmpi"
 		{
-			"vmpi"
-			"vmpi_job_search"
-			"vmpi_job_watch"
-			"vmpi_services_watch"
-			"vmpi_service"
-			"vmpi_transfer"
-			"vmpi_service_install"
-			"vmpi_service_ui"
-			"WaitAndRestart"
+			contains "vmpi_group"
 		}
 
 		folder "Converters"
@@ -172,6 +199,8 @@ group "utils" "everything"
 			"studiomdl"
 		}
 
+		"elementviewer"
+		"glview"
 		"appidlink"
 		"datamodel"
 		"captioncompiler"
@@ -194,7 +223,7 @@ group "utils" "everything"
 	}
 }
 
-group "game" "everything"
+group "game_base" "game" "dedicated" "everything"
 {
 	folder "Libraries"
 	{
@@ -228,53 +257,84 @@ group "game" "everything"
 		"vtf"
 		"vgui_controls"
 		"vgui_surfacelib"
-	}
-
-	folder "VGUI"
-	{
-		"vgui_dll"
-		"vguimatsurface"
-		"gameui"
-	}
-
-	folder "Shaders"
-	{
-		"materialsystem"
-		"shaderapidx9"
-		"shaderapiempty"
-		"stdshader_dbg"
-		"stdshader_dx9"
+		"vstdlib"
 	}
 
 	folder "Game"
 	{
+		folder "VGUI"
+		{
+			"vgui_dll"
+			"vguimatsurface"
+			"gameui"
+		}
+
+		folder "Shaders"
+		{
+			"materialsystem"
+			"shaderapidx9"
+			"stdshader_dbg"
+			"stdshader_dx9"
+		}
+
+		folder "Video and Audio"
+		{
+			"audio_minimp3"
+			"qvideo"
+			"vaudio_speex"
+		}
+	
 		"bsppack"
 		"datacache"
 		"engine"
 		"filesystem_stdio"
-		// "gameui"
 		"inputsystem"
-		"launcher"
-		"launcher_main"
 		"scenefilecache"
 		"serverbrowser"
 		"soundemittersystem"
 		"studiorender"
-		"qvideo"
-		"vstdlib"
-		"audio_minimp3"
 		"unicode"
 		"vphysics"
 	}
 }
 
-group "libraries" "core" "everything"
+group "game" "everything"
 {
 	folder "Game"
 	{
-		"vstdlib"
+		folder "Shaders"
+		{
+			"shaderapidx9"
+		}
+		
+		folder "Launchers"
+		{
+			"launcher"
+			"launcher_main"
+		}
 	}
-	
+}
+
+group "dedicated" "everything"
+{
+	folder "Game"
+	{
+
+		folder "Shaders"
+		{
+			"shaderapiempty"
+		}
+		
+		folder "Launchers"
+		{
+			"dedicated"
+			"dedicated_main"
+		}
+	}
+}
+
+group "libraries" "core" "everything"
+{
 	folder "Libraries"
 	{
 		folder "Tiers"
@@ -320,6 +380,8 @@ group "libraries" "core" "everything"
 		"bzip2"
 		"mxtoolkitwin32"
 		"lua"
+		"vstdlib"
+		"libspeex"
 	}
 }
 
@@ -349,6 +411,16 @@ group "unittests" "everything"
 {
 	folder "Unit Tests"
 	{
+		folder "Library Tests"
+		{
+			"tier1test"
+			"tier2test"
+			"tier3test"
+			"MathlibUnitTest"
+			"Tier0UnitTest"
+			"VStdlibUnitTest"
+		}
+	
 		"dmxtest"
 		"ihvtest1"
 		"inputtest"
@@ -359,27 +431,19 @@ group "unittests" "everything"
 		"shaderapitest"
 		"soundtest"
 		"testprocess"
-		"tier1test"
-		"tier2test"
-		"tier3test"
-		"MathlibUnitTest"
-		"Tier0UnitTest"
-		"VStdlibUnitTest"
 	}
 }
 
 // other groups are included in here with the project folders
 group "everything"
 {
-	"AdminServer"
-	"dedicated"
-	"dedicated_main"
-	"mdllib"
-	"networksystem"
-	"shaderapiempty"
-	"soundsystem"
-	"togl"
-	"libspeex"
-	"vaudio_speex"
-	"vlocalize"
+	folder "Other"
+	{
+		"AdminServer"
+		"mdllib"
+		"networksystem"
+		"soundsystem"
+		"togl"
+		"vlocalize"
+	}
 }

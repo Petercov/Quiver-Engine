@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------
 // Base Console Application Settings
 // ---------------------------------------------------------------
-macro OUTBINNAME        "$SCRIPT_NAME" [!$OUTBINNAME]
+macro OUTBINNAME        "$PROJECT_SCRIPT_NAME" [!$OUTBINNAME]
 macro OUTBINDIR         "$BINDEFAULT"   [!$OUTBINDIR]
 macro CONSOLE_BASE      "1"
 
@@ -9,17 +9,13 @@ include "$SRCDIR/_qpc_scripts/source_base.qpc"
 include "$SRCDIR/_qpc_scripts/win/base_con.qpc" 	[$WINDOWS]
 include "$SRCDIR/_qpc_scripts/posix/exe_base.qpc" 	[$POSIX]
 
-// TODO: fix this, this causes 4 million linker errors
-// so now it just builds objects lmao
 configuration
 {
 	general
 	{
-		out_name "$OUTBINNAME"	[$OUTBINNAME]
-		
-		// out_dir "./$OUTBINDIR"
-		out_dir "./$CONFIG/$_SUBDIRSUFFIX"
-		int_dir "./$CONFIG/$_SUBDIRSUFFIX"
+		out_name    "$OUTBINNAME" [$OUTBINNAME]
+		out_dir     "$OUT_DIR"
+		build_dir   "$BUILD_DIR"
 		
 		configuration_type "application"
 
@@ -39,7 +35,7 @@ configuration
 	
 	linker
 	{
-		output_file		"./$OUTBINDIR/$OUTBINNAME"
+		output_file		"./$OUTBINDIR/$OUTBINNAME" [!$VISUAL_STUDIO]
 		debug_file		"./$OUTBINDIR/$OUTBINNAME"
 		
 		libraries
