@@ -4122,12 +4122,12 @@ const char *CBaseFileSystem::RelativePathToFullPath( const char *pFileName, cons
 	// Fill in the default in case it's not found...
 	Q_strncpy( pFullPath, pFileName, fullPathBufferSize );
 
-	if ( IsPC() && pathFilter == FILTER_NONE )
-	{
-		// X360TBD: PC legacy behavior never returned pack paths
-		// do legacy behavior to ensure naive callers don't break
-		pathFilter = FILTER_CULLPACK;
-	}
+	//if ( IsPC() && pathFilter == FILTER_NONE )
+	//{
+	//	// X360TBD: PC legacy behavior never returned pack paths
+	//	// do legacy behavior to ensure naive callers don't break
+	//	pathFilter = FILTER_CULLPACK;
+	//}
 
 	CSearchPathsIterator iter( this, &pFileName, pPathID, pathFilter );
 	for ( CSearchPath *pSearchPath = iter.GetFirst(); pSearchPath != NULL; pSearchPath = iter.GetNext() )
@@ -5122,3 +5122,24 @@ bool CFileHandle::EndOfFile()
 
 	return ( Tell() >= Size() );
 }
+
+static void WhereIsCommand_f(const CCommand &args)
+{
+	if (!BaseFileSystem())
+		return;
+
+	if (args.ArgC() < 2)
+		return;
+
+	char fullPath[MAX_PATH];
+	if (BaseFileSystem()->RelativePathToFullPath(args.Arg(1), "GAME", fullPath, MAX_PATH))
+	{
+		ConColorMsg(Color(0, 162, 0), "%s\n", fullPath);
+	}
+	else
+	{
+		ConColorMsg(Color(0, 162, 0), "File not found.\n");
+	}
+}
+
+static ConCommand whereiscommand("whereis", WhereIsCommand_f, "Searches for the highest priority instance of a file within the GAME mount path.");
