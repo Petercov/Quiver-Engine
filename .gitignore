@@ -85,6 +85,8 @@ lib/public/**/mathlib.*
 lib/public/**/raytrace.*
 lib/public/**/tier*.*
 lib/public/**/vgui_controls.*
+lib/common/**/libspeex.*
+lib/common/**/lua.*
 
 # --------------------------------------------
 # Engine Assets
