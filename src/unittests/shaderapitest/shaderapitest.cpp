@@ -100,7 +100,7 @@ public:
 	virtual ITexture *GetRenderTargetEx( int nRenderTargetID ) { return 0; }
 
 	// Tells the material system to draw a buffer clearing quad
-	virtual void DrawClearBufferQuad( unsigned char r, unsigned char g, unsigned char b, unsigned char a, bool bClearColor, bool bClearDepth ) {}
+	virtual void DrawClearBufferQuad( unsigned char r, unsigned char g, unsigned char b, unsigned char a, bool bClearColor, bool bClearAlpha, bool bClearDepth ) {}
 
 #if defined( _X360 )
 	virtual void ReadBackBuffer( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *pData, ImageFormat dstFormat, int nDstStride ) {}
@@ -125,6 +125,15 @@ public:
 		pInfo->m_nLookupCount = 0;
 		pInfo->m_flDefaultWeight = 0.0f;
 	}
+	// received an event while not in owning thread, handle this outside
+	virtual void OnThreadEvent(uint32 threadEvent) {}
+
+	virtual MaterialThreadMode_t	GetThreadMode() { return MATERIAL_SINGLE_THREADED; }
+	virtual bool					IsRenderThreadSafe() { return true; }
+
+	// Remove any materials from memory that aren't in use as determined
+	// by the IMaterial's reference count.
+	virtual void UncacheUnusedMaterials(bool bRecomputeStateSnapshots = false) {}
 };
 
 

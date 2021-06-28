@@ -268,7 +268,7 @@ bool CSys::LoadModules( CDedicatedAppSystemGroup *pAppSystemGroup )
 		{ "inputsystem.dll",		INPUTSYSTEM_INTERFACE_VERSION },
 		{ "materialsystem.dll",		MATERIAL_SYSTEM_INTERFACE_VERSION },
 		{ "studiorender.dll",		STUDIO_RENDER_INTERFACE_VERSION },
-		{ "vphysics.dll",			VPHYSICS_INTERFACE_VERSION },
+		//{ "vphysics.dll",			VPHYSICS_INTERFACE_VERSION },
 		{ "datacache.dll",			DATACACHE_INTERFACE_VERSION },
 		{ "datacache.dll",			MDLCACHE_INTERFACE_VERSION },
 		{ "datacache.dll",			STUDIO_DATA_CACHE_INTERFACE_VERSION },
@@ -279,6 +279,21 @@ bool CSys::LoadModules( CDedicatedAppSystemGroup *pAppSystemGroup )
 
 	if ( !pAppSystemGroup->AddSystems( appSystems ) ) 
 		return false;
+
+	{
+		char const* pPhysDLLName = "vphysics.dll";
+		if (CommandLine()->FindParm("-physdll"))
+		{
+			pPhysDLLName = CommandLine()->ParmValue("-physdll");
+		}
+
+		AppModule_t vphysicsModule = pAppSystemGroup->LoadModule(pPhysDLLName);
+		if (!pAppSystemGroup->AddSystem(vphysicsModule, VPHYSICS_INTERFACE_VERSION))
+		{
+			Warning("Unable to load interface %s from %s\n", VPHYSICS_INTERFACE_VERSION, pPhysDLLName);
+			return false;
+		}
+	}
 	
 	engine = (IDedicatedServerAPI *)pAppSystemGroup->FindSystem( VENGINE_HLDS_API_VERSION );
 

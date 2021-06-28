@@ -100,12 +100,24 @@ enum ImageFormat
 	IMAGE_FORMAT_LE_BGRA8888,
 #endif
 
+	IMAGE_FORMAT_DXT1_RUNTIME,
+	IMAGE_FORMAT_DXT5_RUNTIME,
+
 	NUM_IMAGE_FORMATS
 };
 
 //-----------------------------------------------------------------------------
 // Color structures
 //-----------------------------------------------------------------------------
+struct BGRA8888_t;
+struct BGRX8888_t;
+struct RGBA8888_t;
+struct RGB888_t;
+struct BGR888_t;
+struct BGR565_t;
+struct BGRA5551_t;
+struct BGRA4444_t;
+struct RGBX5551_t;
 
 struct BGRA8888_t
 {
@@ -120,20 +132,28 @@ struct BGRA8888_t
 	}
 };
 
+struct BGRX8888_t
+{
+	unsigned char b;		// change the order of names to change the 
+	unsigned char g;		//  order of the output ARGB or BGRA, etc...
+	unsigned char r;		//  Last one is MSB, 1st is LSB.
+	unsigned char x;
+	inline BGRX8888_t& operator=(const BGRX8888_t& in)
+	{
+		*(unsigned int*)this = *(unsigned int*)&in;
+		return *this;
+	}
+};
+
 struct RGBA8888_t
 {
 	unsigned char r;		// change the order of names to change the 
 	unsigned char g;		//  order of the output ARGB or BGRA, etc...
 	unsigned char b;		//  Last one is MSB, 1st is LSB.
 	unsigned char a;
-	inline RGBA8888_t& operator=( const BGRA8888_t& in )
-	{
-		r = in.r;
-		g = in.g;
-		b = in.b;
-		a = in.a;
-		return *this;
-	}
+	inline RGBA8888_t& operator=(const BGRA8888_t& in);
+	inline RGBA8888_t& operator=(const RGB888_t& in);
+	inline RGBA8888_t& operator=(const BGRX8888_t& in);
 };
 
 struct RGB888_t
@@ -246,6 +266,36 @@ struct RGBX5551_t
 		return *this;
 	}
 };
+
+//-----------------------------------------------------------------------------
+// Conversion assignments
+//-----------------------------------------------------------------------------
+RGBA8888_t& RGBA8888_t::operator=(const BGRA8888_t& in)
+{
+	r = in.r;
+	g = in.g;
+	b = in.b;
+	a = in.a;
+	return *this;
+}
+
+RGBA8888_t& RGBA8888_t::operator=(const RGB888_t& in)
+{
+	r = in.r;
+	g = in.g;
+	b = in.b;
+	a = 0xFF;
+	return *this;
+}
+
+RGBA8888_t& RGBA8888_t::operator=(const BGRX8888_t& in)
+{
+	r = in.r;
+	g = in.g;
+	b = in.b;
+	a = 0xFF;
+	return *this;
+}
 
 //-----------------------------------------------------------------------------
 // some important constants
@@ -395,6 +445,9 @@ namespace ImageLoader
 							   int height,	int depth, ImageFormat imageFormat, float srcGamma, float dstGamma, 
 							   int numLevels = 0 );
 
+	// Low quality mipmap generation, but way faster. 
+	void GenerateMipmapLevelsLQ(unsigned char* pSrc, unsigned char* pDst, int width, int height,
+		ImageFormat imageFormat, int numLevels);
 
 	//-----------------------------------------------------------------------------
 	// operations on square images (src and dst can be the same)
@@ -456,6 +509,11 @@ namespace ImageLoader
 	{
 		ImageFormatInfo_t info = ImageFormatInfo(fmt);
 		return ( info.m_NumRedBits > 8 || info.m_NumGreeBits > 8 || info.m_NumBlueBits > 8 || info.m_NumAlphaBits > 8 );
+	}
+
+	inline bool IsRuntimeCompressed(ImageFormat fmt)
+	{
+		return (fmt == IMAGE_FORMAT_DXT1_RUNTIME) || (fmt == IMAGE_FORMAT_DXT5_RUNTIME);
 	}
 
 

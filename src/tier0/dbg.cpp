@@ -426,6 +426,11 @@ void DMsg( const tchar *pGroupName, int level, const tchar *pMsgFormat, ... )
 	va_end(args);
 }
 
+void MsgV(PRINTF_FORMAT_STRING const tchar* pMsg, va_list arglist)
+{
+	_SpewMessage(SPEW_MESSAGE, pMsg, arglist);
+}
+
 void Warning( const tchar *pMsgFormat, ... )
 {
 	va_list args;
@@ -443,6 +448,11 @@ void DWarning( const tchar *pGroupName, int level, const tchar *pMsgFormat, ... 
 	va_start( args, pMsgFormat );
 	_SpewMessage( SPEW_WARNING, pGroupName, level, &s_DefaultOutputColor, pMsgFormat, args );
 	va_end(args);
+}
+
+void WarningV(PRINTF_FORMAT_STRING const tchar* pMsg, va_list arglist)
+{
+	_SpewMessage(SPEW_WARNING, pMsg, arglist);
 }
 
 void Log( const tchar *pMsgFormat, ... )
@@ -464,12 +474,22 @@ void DLog( const tchar *pGroupName, int level, const tchar *pMsgFormat, ... )
 	va_end(args);
 }
 
+void LogV(PRINTF_FORMAT_STRING const tchar* pMsg, va_list arglist)
+{
+	_SpewMessage(SPEW_LOG, pMsg, arglist);
+}
+
 void Error( const tchar *pMsgFormat, ... )
 {
 	va_list args;
 	va_start( args, pMsgFormat );
 	_SpewMessage( SPEW_ERROR, pMsgFormat, args );
 	va_end(args);
+}
+
+void ErrorV(PRINTF_FORMAT_STRING const tchar* pMsg, va_list arglist)
+{
+	_SpewMessage(SPEW_ERROR, pMsg, arglist);
 }
 
 

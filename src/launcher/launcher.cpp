@@ -584,7 +584,7 @@ bool CSourceAppSystemGroup::Create()
 		{ "datacache.dll",			MDLCACHE_INTERFACE_VERSION },
 		{ "datacache.dll",			STUDIO_DATA_CACHE_INTERFACE_VERSION },
 		{ "studiorender.dll",		STUDIO_RENDER_INTERFACE_VERSION },
-		{ "vphysics.dll",			VPHYSICS_INTERFACE_VERSION },
+		//{ "vphysics.dll",			VPHYSICS_INTERFACE_VERSION },
 		{ "qvideo.dll",				AVI_INTERFACE_VERSION },
 		// NOTE: This has to occur before vgui2.dll so it replaces vgui2's surface implementation
 		{ "vguimatsurface.dll",		VGUI_SURFACE_INTERFACE_VERSION },
@@ -596,6 +596,21 @@ bool CSourceAppSystemGroup::Create()
 
 	if ( !AddSystems( appSystems ) ) 
 		return false;
+
+	{
+		char const* pPhysDLLName = "vphysics.dll";
+		if (CommandLine()->FindParm("-physdll"))
+		{
+			pPhysDLLName = CommandLine()->ParmValue("-physdll");
+		}
+
+		AppModule_t vphysicsModule = LoadModule(pPhysDLLName);
+		if (!AddSystem(vphysicsModule, VPHYSICS_INTERFACE_VERSION))
+		{
+			Warning("Unable to load interface %s from %s\n", VPHYSICS_INTERFACE_VERSION, pPhysDLLName);
+			return false;
+		}
+	}
 
 	// Hook in datamodel and p4 control if we're running with -tools
 	if ( IsPC() && CommandLine()->FindParm( "-tools" ))

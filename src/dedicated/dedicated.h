@@ -58,6 +58,11 @@ public:
 		return CSteamAppSystemGroup::LoadModule( factory );
 	}
 
+	AppModule_t LoadModule(const char* pDLLName)
+	{
+		return CSteamAppSystemGroup::LoadModule(pDLLName);
+	}
+
 	// Method to add various global singleton systems 
 	bool AddSystems( AppSystemInfo_t *pSystems )
 	{
@@ -67,6 +72,12 @@ public:
 	void *FindSystem( const char *pInterfaceName )
 	{
 		return CSteamAppSystemGroup::FindSystem( pInterfaceName );
+	}
+
+	// Method to add various global singleton systems 
+	IAppSystem *AddSystem(AppModule_t appModule, const char *pszInterface)
+	{
+		return CSteamAppSystemGroup::AddSystem(appModule, pszInterface);
 	}
 };
 

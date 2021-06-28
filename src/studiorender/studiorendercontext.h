@@ -31,6 +31,8 @@ class CStudioRender;
 extern IStudioDataCache *g_pStudioDataCache;
 extern CStudioRender *g_pStudioRenderImp;
 
+IMaterial* GetModelSpecificDecalMaterial(IMaterial* pDecalMaterial);
+
 
 //-----------------------------------------------------------------------------
 // Internal config structure
@@ -75,6 +77,17 @@ struct StudioRenderContext_t
 //-----------------------------------------------------------------------------
 #define QUEUE_STUDIORENDER_CALL( FuncName, ClassName, pObject, ... )	\
 	CMatRenderContextPtr pRenderContext( g_pMaterialSystem );			\
+	ICallQueue *pCallQueue = pRenderContext->GetCallQueue();			\
+	if ( !pCallQueue || studio_queue_mode.GetInt() == 0 )				\
+	{																	\
+		pObject->FuncName( __VA_ARGS__ );								\
+	}																	\
+	else																\
+	{																	\
+		pCallQueue->QueueCall( pObject, &ClassName::FuncName, ##__VA_ARGS__ );	\
+	}
+
+#define QUEUE_STUDIORENDER_CALL_RC( FuncName, ClassName, pObject, pRenderContext, ... )	\
 	ICallQueue *pCallQueue = pRenderContext->GetCallQueue();			\
 	if ( !pCallQueue || studio_queue_mode.GetInt() == 0 )				\
 	{																	\

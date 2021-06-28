@@ -59,6 +59,7 @@ files
 		"cmatnullrendercontext.cpp"
 		"ColorSpace.cpp"
 		"CTexture.cpp"
+		"ctexturecompositor.cpp"
 		"$SRCDIR/public/filesystem_helpers.cpp"
 		"ImagePacker.cpp"
 		"mat_stub.cpp"
@@ -119,6 +120,7 @@ files
 		"$SRCDIR/public/materialsystem/IShader.h"
 		"$SRCDIR/public/materialsystem/ishaderapi.h"
 		"$SRCDIR/public/materialsystem/itexture.h"
+		"$SRCDIR/public/materialsystem/itexturecompositor.h"
 		"$SRCDIR/public/tier1/KeyValues.h"
 		"$SRCDIR/public/materialsystem/materialsystem_config.h"
 		"$SRCDIR/Public/mathlib/MATHLIB.H"
@@ -164,6 +166,7 @@ files
 		"shader_dll_verify.h" [$WIN32]
 		"ShaderSystem.h"
 		"TextureManager.h"
+		"ctexturecompositor.h"
 	}
 
 	folder "Shader Source"

@@ -26,6 +26,9 @@ typedef int32 *DWORD_PTR;
 #include "ATI_Compress.h"
 #include "bitmap/float_bm.h"
 
+#define STB_DXT_IMPLEMENTATION
+#include "../thirdparty/stb/stb_dxt.h"
+
 // Should be last include
 #include "tier0/memdbgon.h"
 
@@ -868,7 +871,7 @@ bool ConvertToATIxN(  const uint8 *src, ImageFormat srcImageFormat,
 }
 
 
-bool ConvertToDXT(  const uint8 *src, ImageFormat srcImageFormat,
+bool ConvertToDXTLegacy(  const uint8 *src, ImageFormat srcImageFormat,
  					uint8 *dst, ImageFormat dstImageFormat, 
 					int width, int height, int srcStride, int dstStride )
 {
@@ -944,6 +947,103 @@ bool ConvertToDXT(  const uint8 *src, ImageFormat srcImageFormat,
 	Assert( 0 );
 	return false;
 #endif
+}
+
+template < typename SrcPixel_t >
+void CompressSTB(uint8* pDstBytes, ImageFormat dstFmt, const uint8* pSrcBytes, int nWidth, int nHeight)
+{
+	const bool cbWriteAlpha = (dstFmt == IMAGE_FORMAT_DXT5);
+	const uint32 cDstStride = (dstFmt == IMAGE_FORMAT_DXT1) ? 8 : 16;
+
+	const uint32 cPixX = (uint32)nWidth;
+	const uint32 cPixY = (uint32)nHeight;
+	const uint32 cSrcPitch = cPixX * sizeof(SrcPixel_t);
+	const uint32 cLastX = cPixX - 1;
+	const uint32 cLastY = cPixY - 1;
+
+	// STB always takes blocks as 4x4 of RGBA8888_t
+	RGBA8888_t srcBlock[16] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+	SrcPixel_t* pSrcs[4] = { 0, 0, 0, 0 };
+
+	for (uint32 y = 0; y < cPixY; y += 4)
+	{
+		// This handles clamping for cPixY % 4 != 0
+		pSrcs[0] = (SrcPixel_t*)(pSrcBytes + cSrcPitch * Min(y + 0, cLastY));
+		pSrcs[1] = (SrcPixel_t*)(pSrcBytes + cSrcPitch * Min(y + 1, cLastY));
+		pSrcs[2] = (SrcPixel_t*)(pSrcBytes + cSrcPitch * Min(y + 2, cLastY));
+		pSrcs[3] = (SrcPixel_t*)(pSrcBytes + cSrcPitch * Min(y + 3, cLastY));
+
+		for (uint x = 0; x < cPixX; x += 4)
+		{
+			for (uint i = 0; i < 4; ++i)
+			{
+				uint32 offsetX = Min(x + i, cLastX);
+				srcBlock[0 + i] = pSrcs[0][offsetX];
+				srcBlock[4 + i] = pSrcs[1][offsetX];
+				srcBlock[8 + i] = pSrcs[2][offsetX];
+				srcBlock[12 + i] = pSrcs[3][offsetX];
+			}
+
+			stb_compress_dxt_block(pDstBytes, (const uint8*)srcBlock, cbWriteAlpha, STB_DXT_NORMAL);
+			pDstBytes += cDstStride;
+		}
+	}
+}
+
+inline ImageFormat GetTrueImageFormat(ImageFormat fmt)
+{
+	switch (fmt)
+	{
+	case IMAGE_FORMAT_DXT1_RUNTIME:
+		return IMAGE_FORMAT_DXT1;
+	case IMAGE_FORMAT_DXT5_RUNTIME:
+		return IMAGE_FORMAT_DXT5;
+	default: /* expected */
+		break;
+	}
+
+	return fmt;
+}
+
+bool ConvertToDXTRuntime(const uint8* src, ImageFormat srcImageFormat,
+	uint8* dst, ImageFormat dstImageFormat,
+	int width, int height, int srcStride, int dstStride)
+{
+	if (srcStride != 0 || dstStride != 0)
+		return false;
+
+	dstImageFormat = GetTrueImageFormat(dstImageFormat);
+
+	switch (srcImageFormat)
+	{
+	case IMAGE_FORMAT_RGBA8888: CompressSTB<RGBA8888_t>(dst, dstImageFormat, src, width, height); return true;
+	case IMAGE_FORMAT_RGB888:   CompressSTB<RGB888_t>(dst, dstImageFormat, src, width, height); return true;
+	case IMAGE_FORMAT_BGRA8888: CompressSTB<BGRA8888_t>(dst, dstImageFormat, src, width, height); return true;
+	case IMAGE_FORMAT_BGRX8888: CompressSTB<BGRX8888_t>(dst, dstImageFormat, src, width, height); return true;
+	default:
+		Assert(!"Unexpected format here, wtf.");
+		break;
+	};
+
+	return false;
+}
+
+bool ConvertToDXT(const uint8* src, ImageFormat srcImageFormat,
+	uint8* dst, ImageFormat dstImageFormat,
+	int width, int height, int srcStride, int dstStride)
+{
+	// The STB compressor (the new compressor) is faster and higher quality in most cases, and has less error overall
+	// than the S3TC compressor. So use it by default, unless we're working with a format that STB doesn't support.
+	bool bUseNewCompressor = dstImageFormat != IMAGE_FORMAT_DXT1_ONEBITALPHA
+		&& dstImageFormat != IMAGE_FORMAT_DXT3;
+
+	//	bool bUseNewCompressor = dstImageFormat == IMAGE_FORMAT_DXT1_RUNTIME 
+	//		                  || dstImageFormat == IMAGE_FORMAT_DXT5_RUNTIME;
+
+	if (bUseNewCompressor)
+		return ConvertToDXTRuntime(src, srcImageFormat, dst, dstImageFormat, width, height, srcStride, dstStride);
+
+	return ConvertToDXTLegacy(src, srcImageFormat, dst, dstImageFormat, width, height, srcStride, dstStride);
 }
 
 // HDRFIXME: This assumes that the 16-bit integer values are 4.12 fixed-point.
@@ -1219,9 +1319,15 @@ bool ConvertImageFormat( const uint8 *src, ImageFormat srcImageFormat,
 	}
 	
 	// Fast path for just copying a compressed texture
-	if ( ( dstImageFormat == IMAGE_FORMAT_DXT1 || dstImageFormat == IMAGE_FORMAT_DXT3 ||
-		   dstImageFormat == IMAGE_FORMAT_DXT5 || dstImageFormat == IMAGE_FORMAT_ATI1N ||
-		   dstImageFormat == IMAGE_FORMAT_ATI2N ) && ( srcImageFormat == dstImageFormat ) )
+	if (((dstImageFormat == IMAGE_FORMAT_DXT1 || dstImageFormat == IMAGE_FORMAT_DXT1_RUNTIME ||
+		dstImageFormat == IMAGE_FORMAT_DXT3 ||
+		dstImageFormat == IMAGE_FORMAT_DXT5 || dstImageFormat == IMAGE_FORMAT_DXT5_RUNTIME ||
+		dstImageFormat == IMAGE_FORMAT_ATI1N ||
+		dstImageFormat == IMAGE_FORMAT_ATI2N) && (srcImageFormat == dstImageFormat)) ||
+		(dstImageFormat == IMAGE_FORMAT_DXT5 && srcImageFormat == IMAGE_FORMAT_DXT5_RUNTIME) ||
+		(dstImageFormat == IMAGE_FORMAT_DXT1 && srcImageFormat == IMAGE_FORMAT_DXT1_RUNTIME) ||
+		(dstImageFormat == IMAGE_FORMAT_DXT5_RUNTIME && srcImageFormat == IMAGE_FORMAT_DXT5) ||
+		(dstImageFormat == IMAGE_FORMAT_DXT1_RUNTIME && srcImageFormat == IMAGE_FORMAT_DXT1))
 	{
 		// Fast path for compressed textures . . stride doesn't make as much sense.
 //		Assert( srcStride == 0 && dstStride == 0 );
@@ -1237,7 +1343,9 @@ bool ConvertImageFormat( const uint8 *src, ImageFormat srcImageFormat,
 			   srcImageFormat == IMAGE_FORMAT_BGRX8888 ) &&	   													// and
 			 ( dstImageFormat == IMAGE_FORMAT_DXT1  ||															//
 			   dstImageFormat == IMAGE_FORMAT_DXT3  ||	   														// DXT compressed dest
-			   dstImageFormat == IMAGE_FORMAT_DXT5  ) )
+			   dstImageFormat == IMAGE_FORMAT_DXT5 ||
+				 dstImageFormat == IMAGE_FORMAT_DXT1_RUNTIME ||
+				 dstImageFormat == IMAGE_FORMAT_DXT5_RUNTIME) )
 	{
 		return ConvertToDXT( src, srcImageFormat, dst, dstImageFormat, width, height, srcStride, dstStride );
 	}

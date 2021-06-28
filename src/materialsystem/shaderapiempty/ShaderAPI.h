@@ -208,6 +208,10 @@ public:
 	{
 	}
 
+	void CopyTextureToRenderTargetEx(int nRenderTargetID, ShaderAPITextureHandle_t textureHandle, Rect_t* pSrcRect, Rect_t* pDstRect)
+	{
+	}
+
 	// Special system flat normal map binding.
 	void BindFlatNormalMap( TextureStage_t stage );
 	void BindNormalizationCubeMap( TextureStage_t stage );
@@ -312,6 +316,9 @@ public:
 
 	// Forces Z buffering on or off
 	void OverrideDepthEnable( bool bEnable, bool bDepthEnable );
+	void OverrideAlphaWriteEnable(bool bOverrideEnable, bool bAlphaWriteEnable);
+	void OverrideColorWriteEnable(bool bOverrideEnable, bool bColorWriteEnable);
+
 
 	// Sets the shade mode
 	void ShadeMode( ShaderShadeMode_t mode );
@@ -320,7 +327,7 @@ public:
 	void Bind( IMaterial* pMaterial );
 
 	// Returns the nearest supported format
-	ImageFormat GetNearestSupportedFormat( ImageFormat fmt ) const;
+	ImageFormat GetNearestSupportedFormat( ImageFormat fmt, bool bFilteringRequired = true) const;
  	ImageFormat GetNearestRenderTargetFormat( ImageFormat fmt ) const;
 
 	// Sets the texture state
@@ -344,6 +351,8 @@ public:
 							 ImageFormat srcFormat, bool bSrcIsTiled, void *imageData );
 	void TexSubImage2D( int level, int cubeFace, int xOffset, int yOffset, int zOffset, int width, int height,
 							 ImageFormat srcFormat, int srcStride, bool bSrcIsTiled, void *imageData );
+
+	void TexImageFromVTF(IVTFTexture* pVTF, int iVTFFrame);
 
 	bool TexLock( int level, int cubeFaceID, int xOffset, int yOffset, 
 									int width, int height, CPixelWriter& writer );
@@ -385,6 +394,7 @@ public:
 
 	// stuff that isn't to be used from within a shader
 	void ClearBuffersObeyStencil( bool bClearColor, bool bClearDepth );
+	void ClearBuffersObeyStencilEx(bool bClearColor, bool bClearAlpha, bool bClearDepth);
 	void PerformFullScreenStencilOperation( void );
 	void ReadPixels( int x, int y, int width, int height, unsigned char *data, ImageFormat dstFormat );
 	virtual void ReadPixels( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *data, ImageFormat dstFormat, int nDstStride );
@@ -424,8 +434,6 @@ public:
 	virtual int  MaxViewports() const;
 	virtual void OverrideStreamOffsetSupport( bool bOverrideEnabled, bool bEnableSupport ) {}
 	virtual int  GetShadowFilterMode() const;
-	virtual float  GetShadowDepthBias() const;
-	virtual float  GetShadowSlopeScaleDepthBias() const;
 	int  StencilBufferBits() const;
 	int	 GetFrameBufferColorDepth() const;
 	int  GetSamplerCount() const;
@@ -437,6 +445,7 @@ public:
 	bool SupportsPixelShaders_2_0() const;
 	bool SupportsPixelShaders_2_b() const;
 	bool ActuallySupportsPixelShaders_2_b() const;
+	bool SupportsStaticControlFlow() const;
 	bool SupportsVertexShaders_2_0() const;
 	bool SupportsShaderModel_3_0() const;
 	int  MaximumAnisotropicLevel() const;
@@ -470,6 +479,9 @@ public:
 	}
 	bool SpecifiesFogColorInLinearSpace() const;
 	virtual bool SupportsSRGB() const;
+	virtual bool FakeSRGBWrite() const;
+	virtual bool CanDoSRGBReadFromRTs() const;
+	virtual bool SupportsGLMixedSizeTargets() const;
 
 	const char *GetHWSpecificShaderDLLName() const;
 	bool NeedsAAClamp() const
@@ -581,7 +593,10 @@ public:
 	virtual bool SupportsNormalMapCompression() const {	return false; }
 	virtual bool SupportsBorderColor() const { return false; }
 	virtual bool SupportsFetch4() const { return false; }
+	virtual bool CanStretchRectFromTextures(void) const { return false; }
 	virtual void EnableBuffer2FramesAhead( bool bEnable ) {}
+
+	virtual void SetPSNearAndFarZ(int pshReg) { }
 
 	virtual void SetDepthFeatheringPixelShaderConstant( int iConstant, float fDepthBlendScale ) {}
 
@@ -887,6 +902,28 @@ public:
 	virtual bool GetHDREnabled( void ) const { return true; }
 	virtual void SetHDREnabled( bool bEnable ) {}
 
+	virtual void CopyRenderTargetToScratchTexture(ShaderAPITextureHandle_t srcRt, ShaderAPITextureHandle_t dstTex, Rect_t* pSrcRect = NULL, Rect_t* pDstRect = NULL)
+	{
+	}
+
+	// Allows locking and unlocking of very specific surface types.
+	virtual void LockRect(void** pOutBits, int* pOutPitch, ShaderAPITextureHandle_t texHandle, int mipmap, int x, int y, int w, int h, bool bWrite, bool bRead)
+	{
+	}
+
+	virtual void UnlockRect(ShaderAPITextureHandle_t texHandle, int mipmap)
+	{
+	}
+
+	virtual void TexLodClamp(int finest) {}
+
+	virtual void TexLodBias(float bias) {}
+
+	virtual void CopyTextureToTexture(ShaderAPITextureHandle_t srcTex, ShaderAPITextureHandle_t dstTex) {}
+
+	void PrintfVA(char* fmt, va_list vargs) {}
+	void Printf(const char* fmt, ...) {}
+	float Knob(char* knobname, float* setvalue = NULL) { return 0.0f; };
 
 private:
 	enum

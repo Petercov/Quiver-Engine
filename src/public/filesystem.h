@@ -13,6 +13,7 @@
 #include "tier1/utlsymbol.h"
 #include "appframework/IAppSystem.h"
 #include "tier1/checksum_crc.h"
+#include "tier1/refcount.h"
 
 #ifndef FILESYSTEM_H
 #define FILESYSTEM_H
@@ -28,8 +29,11 @@
 class CUtlBuffer;
 class KeyValues;
 class IFileList;
+class IThreadPool;
+class CMemoryFileBacking;
 
 typedef void * FileHandle_t;
+typedef void* FileCacheHandle_t;
 typedef int FileFindHandle_t;
 typedef void (*FileSystemLoggingFunc_t)( const char *fileName, const char *accessType );
 typedef int WaitForResourcesHandle_t;
@@ -401,7 +405,7 @@ public:
 // Main file system interface
 //-----------------------------------------------------------------------------
 
-#define FILESYSTEM_INTERFACE_VERSION			"VFileSystem017"
+#define FILESYSTEM_INTERFACE_VERSION			"VFileSystem018"
 
 abstract_class IFileSystem : public IAppSystem, public IBaseFileSystem
 {
@@ -736,6 +740,65 @@ public:
 
 	// Installs a callback used to display a dirty disk dialog
 	virtual void			InstallDirtyDiskReportFunc( FSDirtyDiskReportFunc_t func ) = 0;
+
+	//--------------------------------------------------------
+	// Low-level file caching. Cached files are loaded into memory and used
+	// to satisfy read requests (sync and async) until the cache is destroyed.
+	// NOTE: this could defeat file whitelisting, if a file were loaded in
+	// a non-whitelisted environment and then reused. Clients should not cache
+	// files across moves between pure/non-pure environments.
+	//--------------------------------------------------------
+	virtual FileCacheHandle_t CreateFileCache() = 0;
+	virtual void AddFilesToFileCache(FileCacheHandle_t cacheId, const char** ppFileNames, int nFileNames, const char* pPathID) = 0;
+	virtual bool IsFileCacheFileLoaded(FileCacheHandle_t cacheId, const char* pFileName) = 0;
+	virtual bool IsFileCacheLoaded(FileCacheHandle_t cacheId) = 0;
+	virtual void DestroyFileCache(FileCacheHandle_t cacheId) = 0;
+
+	// XXX For now, we assume that all path IDs are "GAME", never cache files
+	// outside of the game search path, and preferentially return those files
+	// whenever anyone searches for a match even if an on-disk file in another
+	// folder would have been found first in a traditional search. extending
+	// the memory cache to cover non-game files isn't necessary right now, but
+	// should just be a matter of defining a more complex key type. (henryg)
+
+	// Register a CMemoryFileBacking; must balance with UnregisterMemoryFile.
+	// Returns false and outputs an ref-bumped pointer to the existing entry
+	// if the same file has already been registered by someone else; this must
+	// be Unregistered to maintain the balance.
+	virtual bool RegisterMemoryFile(CMemoryFileBacking* pFile, CMemoryFileBacking** ppExistingFileWithRef) = 0;
+
+	// Unregister a CMemoryFileBacking; must balance with RegisterMemoryFile.
+	virtual void UnregisterMemoryFile(CMemoryFileBacking* pFile) = 0;
+
+	// Called when we unload a file, to remove that file's info for pure server purposes.
+	virtual void			NotifyFileUnloaded(const char* pszFilename, const char* pPathId) = 0;
+};
+
+
+
+//-----------------------------------------------------------------------------
+// Memory file backing, which you can use to fake out the filesystem, caching data
+// in memory and have it associated with a file
+//-----------------------------------------------------------------------------
+class CMemoryFileBacking : public CRefCounted<CRefCountServiceMT>
+{
+public:
+	// malloc and free in headers with our janky memdbg system. What could go wrong. Except everything.
+	// (this free can't skip memdbg if paired malloc used memdbg)
+#include <memdbgon.h>
+	CMemoryFileBacking(IFileSystem* pFS) : m_pFS(pFS), m_nRegistered(0), m_pFileName(NULL), m_pData(NULL), m_nLength(0) { }
+	~CMemoryFileBacking() { free((char*)m_pFileName); if (m_pData) m_pFS->FreeOptimalReadBuffer((char*)m_pData); }
+#include <memdbgoff.h>
+
+	IFileSystem* m_pFS;
+	int m_nRegistered;
+	const char* m_pFileName;
+	const char* m_pData;
+	int m_nLength;
+
+private:
+	CMemoryFileBacking(const CMemoryFileBacking&); // not defined
+	CMemoryFileBacking& operator=(const CMemoryFileBacking&); // not defined
 };
 
 //-----------------------------------------------------------------------------

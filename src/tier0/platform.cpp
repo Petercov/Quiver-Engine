@@ -158,6 +158,37 @@ const tchar *Plat_GetCommandLine()
 #endif
 }
 
+bool GetMemoryInformation(MemoryInformation* pOutMemoryInfo)
+{
+	if (!pOutMemoryInfo)
+		return false;
+
+	MEMORYSTATUSEX	memStat;
+	ZeroMemory(&memStat, sizeof(MEMORYSTATUSEX));
+	memStat.dwLength = sizeof(MEMORYSTATUSEX);
+
+	if (!GlobalMemoryStatusEx(&memStat))
+		return false;
+
+	const uint cOneMb = 1024 * 1024;
+
+	switch (pOutMemoryInfo->m_nStructVersion)
+	{
+	case 0:
+		(*pOutMemoryInfo).m_nPhysicalRamMbTotal = memStat.ullTotalPhys / cOneMb;
+		(*pOutMemoryInfo).m_nPhysicalRamMbAvailable = memStat.ullAvailPhys / cOneMb;
+
+		(*pOutMemoryInfo).m_nVirtualRamMbTotal = memStat.ullTotalVirtual / cOneMb;
+		(*pOutMemoryInfo).m_nVirtualRamMbAvailable = memStat.ullAvailVirtual / cOneMb;
+		break;
+
+	default:
+		return false;
+	};
+
+	return true;
+}
+
 const char *Plat_GetCommandLineA()
 {
 	return GetCommandLineA();

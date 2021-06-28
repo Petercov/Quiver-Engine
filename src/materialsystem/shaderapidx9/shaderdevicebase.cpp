@@ -66,7 +66,7 @@ static void InitShaderAPICVars( )
 	static CShaderAPIConVarAccessor g_ConVarAccessor;
 	if ( g_pCVar )
 	{
-		ConVar_Register( 0, &g_ConVarAccessor );
+		ConVar_Register( FCVAR_MATERIAL_SYSTEM_THREAD, &g_ConVarAccessor );
 	}
 }
 
@@ -579,6 +579,14 @@ void CShaderDeviceMgrBase::ReadDXSupportLevels( HardwareCaps_t &caps )
 		if ( nDXSupportLevel != 0 )
 		{
 			caps.m_nDXSupportLevel = nDXSupportLevel;
+			// Don't slam up the dxlevel level to 92 on DX10 cards in OpenGL Linux/Win mode (otherwise Intel will get dxlevel 92 when we want 90)
+			if ( !( IsOpenGL() && ( IsLinux() || IsWindows() ) ) )
+			{
+				if ( caps.m_bDX10Card )
+				{
+					caps.m_nDXSupportLevel = 92;
+				}
+			}
 		}
 		else
 		{
@@ -596,10 +604,22 @@ void CShaderDeviceMgrBase::LoadHardwareCaps( KeyValues *pGroup, HardwareCaps_t &
 	if( !pGroup )
 		return;
 
-	caps.m_UseFastClipping = ReadBool( pGroup, "NoUserClipPlanes", caps.m_UseFastClipping );
+	// don't just blanket kill clip planes on POSIX, only shoot them down if we're running ARB, or asked for nouserclipplanes.
+	//FIXME need to take into account the caps bit that GLM can now provide, so NV can use normal clipping and ATI can fall back to fastclip.
+	
+	if ( CommandLine()->FindParm("-arbmode") || CommandLine()->CheckParm( "-nouserclip" ) )
+	{
+		caps.m_UseFastClipping = true;
+	}
+	else
+	{
+		caps.m_UseFastClipping = ReadBool( pGroup, "NoUserClipPlanes", caps.m_UseFastClipping );
+	}
+
 	caps.m_bNeedsATICentroidHack = ReadBool( pGroup, "CentroidHack", caps.m_bNeedsATICentroidHack );
 	caps.m_bDisableShaderOptimizations = ReadBool( pGroup, "DisableShaderOptimizations", caps.m_bDisableShaderOptimizations );
 }
+
 
 
 //-----------------------------------------------------------------------------
@@ -665,6 +685,11 @@ static unsigned long GetRam()
 {
 	MEMORYSTATUS stat;
 	GlobalMemoryStatus( &stat );
+	
+	char buf[256];
+	V_snprintf( buf, sizeof( buf ), "GlobalMemoryStatus: %llu\n", (uint64)(stat.dwTotalPhys) );
+	Plat_DebugString( buf );
+
 	return (stat.dwTotalPhys / (1024 * 1024));
 }
 
@@ -716,8 +741,13 @@ bool CShaderDeviceMgrBase::GetRecommendedConfigurationInfo( int nAdapter, int nD
 	// Next, override with cpu-speed based overrides
 	const CPUInformation& pi = *GetCPUInformation();
 	int nCPUSpeedMhz = (int)(pi.m_Speed / 1000000.0f);
+		
 	bool bAMD = Q_stristr( pi.m_szProcessorID, "amd" ) != NULL;
-	DevMsg( "cpu speed %d MHz %s\n", nCPUSpeedMhz, pi.m_szProcessorID );
+	
+	char buf[256];
+	V_snprintf( buf, sizeof( buf ), "CShaderDeviceMgrBase::GetRecommendedConfigurationInfo: CPU speed: %d MHz, Processor: %s\n", nCPUSpeedMhz, pi.m_szProcessorID );
+	Plat_DebugString( buf );
+
 	KeyValues *pCPUKeyValues = FindCPUSpecificConfig( pCfg, nCPUSpeedMhz, bAMD );
 	LoadConfig( pCPUKeyValues, pConfiguration );
 
@@ -731,7 +761,7 @@ bool CShaderDeviceMgrBase::GetRecommendedConfigurationInfo( int nAdapter, int nD
 	int nTextureMemorySize = GetVidMemBytes( nAdapter );
 	int vidMemMB = nTextureMemorySize / ( 1024 * 1024 );
 	KeyValues *pVidMemKeyValues = FindVidMemSpecificConfig( pCfg, vidMemMB );
-	if ( pVidMemKeyValues )
+	if ( pVidMemKeyValues && nTextureMemorySize > 0 )
 	{
 		if ( CommandLine()->FindParm( "-debugdxsupport" ) )
 		{
@@ -782,16 +812,22 @@ bool CShaderDeviceMgrBase::GetRecommendedConfigurationInfo( int nAdapter, int nD
 //-----------------------------------------------------------------------------
 int CShaderDeviceMgrBase::GetClosestActualDXLevel( int nDxLevel ) const
 {
-	if ( nDxLevel <= 69 )
-		return 60;
-	if ( nDxLevel <= 79 )
-		return 70;
+	if ( nDxLevel < ABSOLUTE_MINIMUM_DXLEVEL ) 
+		return ABSOLUTE_MINIMUM_DXLEVEL;
+
 	if ( nDxLevel == 80 )
 		return 80;
 	if ( nDxLevel <= 89 )
 		return 81;
+
+	if ( IsOpenGL() )
+	{
+		return ( nDxLevel <= 90 ) ? 90 : 92;
+	}
+
 	if ( nDxLevel <= 94 )
 		return 90;
+
 	if ( IsX360() && nDxLevel <= 98 )
 		return 98;
 	if ( nDxLevel <= 99 )
@@ -866,10 +902,28 @@ CShaderDeviceBase::CShaderDeviceBase()
 	m_nAdapter = -1;
 	m_hWnd = NULL;
 	m_hWndCookie = NULL;
+	m_dwThreadId = ThreadGetCurrentId();
 }
 
 CShaderDeviceBase::~CShaderDeviceBase()
 {
+}
+
+void CShaderDeviceBase::SetCurrentThreadAsOwner()
+{
+	m_dwThreadId = ThreadGetCurrentId();
+}
+
+void CShaderDeviceBase::RemoveThreadOwner()
+{
+	m_dwThreadId = 0xFFFFFFFF;
+}
+
+bool CShaderDeviceBase::ThreadOwnsDevice()
+{
+	if ( ThreadGetCurrentId() == m_dwThreadId )
+		return true;
+	return false;
 }
 
 

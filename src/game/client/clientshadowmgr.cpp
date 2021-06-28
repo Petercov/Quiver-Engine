@@ -3527,7 +3527,7 @@ bool CClientShadowMgr::ShouldUseParentShadow( IClientRenderable *pRenderable )
 void CClientShadowMgr::PreRender()
 {
 	// only update shadows once per frame
-	Assert( gpGlobals->framecount != m_nPrevFrameCount );
+	AssertOnce( gpGlobals->framecount != m_nPrevFrameCount );
 	m_nPrevFrameCount = gpGlobals->framecount;
 
 	VPROF_BUDGET( "CClientShadowMgr::PreRender", VPROF_BUDGETGROUP_SHADOW_RENDERING );

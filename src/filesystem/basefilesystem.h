@@ -50,6 +50,7 @@
 #include "filesystem.h"
 #include "tier1/utlvector.h"
 #include <stdarg.h>
+#include "tier1/utlhashtable.h"
 #include "tier1/utlrbtree.h"
 #include "tier1/utlsymbol.h"
 #include "tier1/utllinkedlist.h"
@@ -173,6 +174,29 @@ protected:
 	unsigned int	m_nMagic;
 
 	bool IsValid();
+};
+
+class CMemoryFileHandle : public CFileHandle
+{
+public:
+	CMemoryFileHandle(CBaseFileSystem* pFS, CMemoryFileBacking* pBacking)
+		: CFileHandle(pFS), m_pBacking(pBacking), m_nPosition(0) {
+		m_nLength = pBacking->m_nLength;
+	}
+
+	~CMemoryFileHandle() { m_pBacking->Release(); }
+
+	int		Read(void* pBuffer, int nDestSize, int nLength);
+	int		Seek(int64 nOffset, int nWhence);
+	int		Tell() { return m_nPosition; }
+	int		Size() { return (int)m_nLength; }
+
+	CMemoryFileBacking* m_pBacking;
+	int m_nPosition;
+
+private:
+	CMemoryFileHandle(const CMemoryFileHandle&); // not defined
+	CMemoryFileHandle& operator=(const CMemoryFileHandle&); // not defined
 };
 
 class CFileLoadInfo
@@ -331,6 +355,16 @@ public:
 	virtual void				SetWhitelistSpewFlags( int flags );
 	virtual void				InstallDirtyDiskReportFunc( FSDirtyDiskReportFunc_t func );
 
+	// Low-level file caching
+	virtual FileCacheHandle_t CreateFileCache();
+	virtual void AddFilesToFileCache(FileCacheHandle_t cacheId, const char** ppFileNames, int nFileNames, const char* pPathID);
+	virtual bool IsFileCacheFileLoaded(FileCacheHandle_t cacheId, const char* pFileName);
+	virtual bool IsFileCacheLoaded(FileCacheHandle_t cacheId);
+	virtual void DestroyFileCache(FileCacheHandle_t cacheId);
+
+
+	virtual void				NotifyFileUnloaded(const char* pszFilename, const char* pPathId) OVERRIDE;
+
 	// Returns the file system statistics retreived by the implementation.  Returns NULL if not supported.
 	virtual const FileSystemStatistics *GetFilesystemStatistics();
 
@@ -412,6 +446,27 @@ public:
 	virtual DVDMode_t			GetDVDMode() { return m_DVDMode; }
 
 	FSDirtyDiskReportFunc_t		GetDirtyDiskReportFunc() { return m_DirtyDiskReportFunc; }
+
+	//-----------------------------------------------------------------------------
+	// MemoryFile cache implementation
+	//-----------------------------------------------------------------------------
+	class CFileCacheObject;
+
+	// XXX For now, we assume that all path IDs are "GAME", never cache files
+	// outside of the game search path, and preferentially return those files
+	// whenever anyone searches for a match even if an on-disk file in another
+	// folder would have been found first in a traditional search. extending
+	// the memory cache to cover non-game files isn't necessary right now, but
+	// should just be a matter of defining a more complex key type. (henryg)
+
+	// Register a CMemoryFileBacking; must balance with UnregisterMemoryFile.
+	// Returns false and outputs an ref-bumped pointer to the existing entry
+	// if the same file has already been registered by someone else; this must
+	// be Unregistered to maintain the balance.
+	virtual bool RegisterMemoryFile(CMemoryFileBacking* pFile, CMemoryFileBacking** ppExistingFileWithRef);
+
+	// Unregister a CMemoryFileBacking; must balance with RegisterMemoryFile.
+	virtual void UnregisterMemoryFile(CMemoryFileBacking* pFile);
 
 	//------------------------------------
 	// Synchronous path for file operations
@@ -684,6 +739,9 @@ protected:
 		FILE		*m_pFile;
 		char		*m_pName;
 	};
+
+	CThreadFastMutex m_MemoryFileMutex;
+	CUtlHashtable< const char*, CMemoryFileBacking* > m_MemoryFileHash;
 
 	//CUtlRBTree< COpenedFile, int > m_OpenedFiles;
 	CThreadMutex m_OpenedFilesMutex;

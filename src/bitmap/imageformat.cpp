@@ -91,6 +91,9 @@ static ImageFormatInfo_t g_ImageFormatInfo[] =
 	{ "LE_BGRX8888",				4, 8, 8, 8, 8, false },			// IMAGE_FORMAT_LE_BGRX8888
 	{ "LE_BGRA8888",				4, 8, 8, 8, 8, false },			// IMAGE_FORMAT_LE_BGRA8888
 #endif
+
+	{ "DXT1_RUNTIME",				0, 0, 0, 0, 0, true, },			// IMAGE_FORMAT_DXT1_RUNTIME
+	{ "DXT5_RUNTIME",				0, 0, 0, 0, 8, true, },			// IMAGE_FORMAT_DXT5_RUNTIME
 };
 
 
@@ -153,11 +156,13 @@ int GetMemRequired( int width, int height, int depth, ImageFormat imageFormat, b
 			switch ( imageFormat )
 			{
 			case IMAGE_FORMAT_DXT1:
+			case IMAGE_FORMAT_DXT1_RUNTIME:
 			case IMAGE_FORMAT_ATI1N:
 				return numBlocks * 8;
 
 			case IMAGE_FORMAT_DXT3:
 			case IMAGE_FORMAT_DXT5:
+			case IMAGE_FORMAT_DXT5_RUNTIME:
 			case IMAGE_FORMAT_ATI2N:
 				return numBlocks * 16;
 			}

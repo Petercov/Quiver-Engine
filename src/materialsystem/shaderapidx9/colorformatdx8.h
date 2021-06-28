@@ -30,13 +30,13 @@
 //-----------------------------------------------------------------------------
 // Finds the nearest supported frame buffer format
 //-----------------------------------------------------------------------------
-ImageFormat FindNearestSupportedBackBufferFormat( UINT displayAdapter, D3DDEVTYPE deviceType,
+ImageFormat FindNearestSupportedBackBufferFormat( unsigned int displayAdapter, D3DDEVTYPE deviceType,
 	ImageFormat displayFormat, ImageFormat backBufferFormat, bool bIsWindowed );
 
 //-----------------------------------------------------------------------------
 // Initializes the color format informat; call it every time display mode changes
 //-----------------------------------------------------------------------------
-void InitializeColorInformation( UINT displayAdapter, D3DDEVTYPE deviceType, 
+void InitializeColorInformation( unsigned int displayAdapter, D3DDEVTYPE deviceType, 
 								 ImageFormat displayFormat );
 
 //-----------------------------------------------------------------------------

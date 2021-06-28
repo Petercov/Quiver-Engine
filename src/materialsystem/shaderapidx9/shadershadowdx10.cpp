@@ -88,6 +88,14 @@ void CShaderShadowDx10::BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFac
 {
 }
 
+void CShaderShadowDx10::BlendOp( ShaderBlendOp_t blendOp )
+{
+}
+
+void CShaderShadowDx10::BlendOpSeparateAlpha( ShaderBlendOp_t blendOp )
+{
+}
+
 // A simpler method of dealing with alpha modulation
 void CShaderShadowDx10::EnableAlphaPipe( bool bEnable )
 {

@@ -1152,19 +1152,6 @@ void CStudioRender::AddDecal( StudioDecalHandle_t hDecal, const StudioRenderCont
 		return;
 	}
 
-	// Since we're adding this to a studio model, check the decal to see if 
-	// there's an alternate form used for static props...
-	bool found;
-	IMaterialVar* pModelMaterialVar = pDecalMaterial->FindVar( "$modelmaterial", &found, false );
-	if (found)
-	{
-		IMaterial* pModelMaterial = g_pMaterialSystem->FindMaterial( pModelMaterialVar->GetStringValue(), TEXTURE_GROUP_DECAL, false );
-		if ( !IsErrorMaterial( pModelMaterial ) )
-		{
-			pDecalMaterial = pModelMaterial;
-		}
-	}
-
 	// Get dynamic information from the material (fade start, fade time)
 	float fadeStartTime	= 0.0f;
 	float fadeDuration = 0.0f;

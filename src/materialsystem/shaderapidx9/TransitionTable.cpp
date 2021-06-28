@@ -22,49 +22,6 @@
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
  
-//-----------------------------------------------------------------------------
-// Enumeration for ApplyStateFunc_ts
-//-----------------------------------------------------------------------------
-// Any function that does not require a texture stage
-// NOTE: If you change this, change the function table s_pRenderFunctionTable[] below!!
-enum RenderStateFunc_t
-{
-	RENDER_STATE_DepthTest = 0,
-	RENDER_STATE_ZWriteEnable,
-	RENDER_STATE_ColorWriteEnable,
-	RENDER_STATE_AlphaTest,
-	RENDER_STATE_FillMode,
-	RENDER_STATE_Lighting,
-	RENDER_STATE_SpecularEnable,
-	RENDER_STATE_SRGBWriteEnable,
-	RENDER_STATE_AlphaBlend,
-	RENDER_STATE_SeparateAlphaBlend,
-	RENDER_STATE_CullEnable,
-	RENDER_STATE_VertexBlendEnable,
-	RENDER_STATE_FogMode,
-	RENDER_STATE_ActivateFixedFunction,
-	RENDER_STATE_TextureEnable,
-	RENDER_STATE_DiffuseMaterialSource,
-	RENDER_STATE_DisableFogGammaCorrection,
-	RENDER_STATE_EnableAlphaToCoverage,
-
-	RENDER_STATE_COUNT,
-};
-
-
-// Any function that requires a texture stage
-// NOTE: If you change this, change the function table s_pTextureFunctionTable[] below!!
-enum TextureStateFunc_t	
-{
-	TEXTURE_STATE_TexCoordIndex = 0,
-	TEXTURE_STATE_SRGBReadEnable,
-	TEXTURE_STATE_Fetch4Enable,
-	// Fixed function states
-	TEXTURE_STATE_ColorTextureStage,
-	TEXTURE_STATE_AlphaTextureStage,
-	TEXTURE_STATE_COUNT
-};
-
 
 enum
 {
@@ -392,6 +349,12 @@ static inline void SetTextureStageState( int stage, D3DTEXTURESTAGESTATETYPE sta
 		}													\
 	}
 
+#ifdef DX_TO_GL_ABSTRACTION
+	#define SetRenderStateConstMacro( state, val ) { if ( state != D3DRS_NOTSUPPORTED ) Dx9Device()->SetRenderStateConstInline( state, val ); }
+#else
+	#define SetRenderStateConstMacro( state, val ) SetRenderState( state, val )
+#endif
+
 #ifdef _WIN32
 #pragma warning( default : 4189 )
 #endif
@@ -478,8 +441,18 @@ void ApplyFetch4Enable( const ShadowState_t& shaderState, int stage )
 	UPDATE_BOARD_SAMPLER_STATE( ATISAMP_FETCH4, Fetch4Enable, stage );
 }																	
 
+#ifdef DX_TO_GL_ABSTRACTION
+void ApplyShadowFilterEnable( const ShadowState_t& shaderState, int stage )
+{
+	SetSamplerState( stage, D3DSAMP_SHADOWFILTER, shaderState.m_SamplerState[stage].m_ShadowFilterEnable );
+	
+	UPDATE_BOARD_SAMPLER_STATE( D3DSAMP_SHADOWFILTER, ShadowFilterEnable, stage );
+}																	
+#endif
+
+
 //APPLY_RENDER_STATE_FUNC( D3DRS_ZWRITEENABLE,			ZWriteEnable )
-APPLY_RENDER_STATE_FUNC( D3DRS_COLORWRITEENABLE,		ColorWriteEnable )
+//APPLY_RENDER_STATE_FUNC( D3DRS_COLORWRITEENABLE,		ColorWriteEnable )
 APPLY_RENDER_STATE_FUNC( D3DRS_FILLMODE,				FillMode )
 APPLY_RENDER_STATE_FUNC( D3DRS_LIGHTING,				Lighting )
 APPLY_RENDER_STATE_FUNC( D3DRS_SPECULARENABLE,			SpecularEnable )
@@ -495,6 +468,14 @@ void ApplyZWriteEnable( const ShadowState_t& shaderState, int arg )
 #endif
 
 	UPDATE_BOARD_RENDER_STATE( D3DRS_ZWRITEENABLE, ZWriteEnable );
+}
+
+void ApplyColorWriteEnable( const ShadowState_t& shaderState, int arg )
+{
+	SetRenderState( D3DRS_COLORWRITEENABLE, shaderState.m_ColorWriteEnable );
+	g_pTransitionTable->CurrentState().m_ColorWriteEnable = shaderState.m_ColorWriteEnable;
+
+	UPDATE_BOARD_RENDER_STATE( D3DRS_COLORWRITEENABLE, ColorWriteEnable );
 }
 
 void ApplySRGBReadEnable( const ShadowState_t& shaderState, int stage )
@@ -619,11 +600,11 @@ void CTransitionTable::ApplyDepthTest( const ShadowState_t& state )
 	if (state.m_ZEnable != D3DZB_FALSE)
 	{
 		SetZFunc( state.m_ZFunc );
-		if (m_CurrentState.m_ZBias != state.m_ZBias)
-		{
-			ShaderAPI()->ApplyZBias( state );
-			m_CurrentState.m_ZBias = (PolygonOffsetMode_t) state.m_ZBias; // Cast two bits from m_ZBias
-		}
+	}
+	if (m_CurrentState.m_ZBias != state.m_ZBias)
+	{
+		ShaderAPI()->ApplyZBias( state );
+		m_CurrentState.m_ZBias = (PolygonOffsetMode_t) state.m_ZBias; // Cast two bits from m_ZBias
 	}
 
 #ifdef DEBUG_BOARD_STATE
@@ -698,6 +679,12 @@ void CTransitionTable::ApplyAlphaBlend( const ShadowState_t& state )
 			SetRenderState( D3DRS_DESTBLEND, state.m_DestBlend );
 			m_CurrentState.m_DestBlend = state.m_DestBlend;
 		}
+
+		if (m_CurrentState.m_BlendOp != state.m_BlendOp )
+		{
+			SetRenderStateConstMacro( D3DRS_BLENDOP, state.m_BlendOp );
+			m_CurrentState.m_BlendOp = state.m_BlendOp;
+		}
 	}
 
 #ifdef DEBUG_BOARD_STATE
@@ -705,6 +692,7 @@ void CTransitionTable::ApplyAlphaBlend( const ShadowState_t& state )
 	BoardState().m_AlphaBlendEnable = state.m_AlphaBlendEnable;
 	BoardState().m_SrcBlend = state.m_SrcBlend;
 	BoardState().m_DestBlend = state.m_DestBlend;
+	BoardState().m_BlendOp = state.m_BlendOp;
 #endif
 }
 
@@ -735,6 +723,12 @@ void CTransitionTable::ApplySeparateAlphaBlend( const ShadowState_t& state )
 			SetRenderState( D3DRS_DESTBLENDALPHA, state.m_DestBlendAlpha );
 			m_CurrentState.m_DestBlendAlpha = state.m_DestBlendAlpha;
 		}
+
+		if (m_CurrentState.m_BlendOpAlpha != state.m_BlendOpAlpha )
+		{
+			SetRenderStateConstMacro( D3DRS_BLENDOPALPHA, state.m_BlendOpAlpha );
+			m_CurrentState.m_BlendOpAlpha = state.m_BlendOpAlpha;
+		}
 	}
 
 #ifdef DEBUG_BOARD_STATE
@@ -742,6 +736,7 @@ void CTransitionTable::ApplySeparateAlphaBlend( const ShadowState_t& state )
 	BoardState().m_SeparateAlphaBlendEnable = state.m_SeparateAlphaBlendEnable;
 	BoardState().m_SrcBlendAlpha = state.m_SrcBlendAlpha;
 	BoardState().m_DestBlendAlpha = state.m_DestBlendAlpha;
+	BoardState().m_BlendOpAlpha = state.m_BlendOpAlpha;
 #endif
 }
 
@@ -976,6 +971,9 @@ ApplyStateFunc_t s_pTextureFunctionTable[] =
 	ApplyTexCoordIndex,
 	ApplySRGBReadEnable,
 	ApplyFetch4Enable,
+#ifdef DX_TO_GL_ABSTRACTION
+	ApplyShadowFilterEnable,
+#endif
 	// Fixed function states
 	ApplyColorTextureStage,
 	ApplyAlphaTextureStage,
@@ -1038,16 +1036,20 @@ int CTransitionTable::CreateNormalTransitions( const ShadowState_t& fromState, c
 	bool blendEnableDifferent = (toState.m_AlphaBlendEnable != fromState.m_AlphaBlendEnable);
 	bool srcBlendDifferent = toState.m_AlphaBlendEnable && (toState.m_SrcBlend != fromState.m_SrcBlend);
 	bool destBlendDifferent = toState.m_AlphaBlendEnable && (toState.m_DestBlend != fromState.m_DestBlend);
-	if (bForce || blendEnableDifferent || srcBlendDifferent || destBlendDifferent)
+	bool blendOpDifferent = toState.m_AlphaBlendEnable && ( toState.m_BlendOp != fromState.m_BlendOp );
+	if (bForce || blendOpDifferent || blendEnableDifferent || srcBlendDifferent || destBlendDifferent)
 	{
 		AddTransition( RENDER_STATE_AlphaBlend );
 		++numOps;
 	}
 
+	// Shouldn't have m_SeparateAlphaBlendEnable set unless m_AlphaBlendEnable is also set.
+	Assert ( toState.m_AlphaBlendEnable || !toState.m_SeparateAlphaBlendEnable );
 	bool blendSeparateAlphaEnableDifferent = (toState.m_SeparateAlphaBlendEnable != fromState.m_SeparateAlphaBlendEnable);
 	bool srcBlendAlphaDifferent = toState.m_SeparateAlphaBlendEnable && (toState.m_SrcBlendAlpha != fromState.m_SrcBlendAlpha);
 	bool destBlendAlphaDifferent = toState.m_SeparateAlphaBlendEnable && (toState.m_DestBlendAlpha != fromState.m_DestBlendAlpha);
-	if (bForce || blendSeparateAlphaEnableDifferent || srcBlendAlphaDifferent || destBlendAlphaDifferent)
+	bool blendOpAlphaDifferent = toState.m_SeparateAlphaBlendEnable && ( toState.m_BlendOpAlpha != fromState.m_BlendOpAlpha );
+	if (bForce || blendOpAlphaDifferent || blendSeparateAlphaEnableDifferent || srcBlendAlphaDifferent || destBlendAlphaDifferent)
 	{
 		AddTransition( RENDER_STATE_SeparateAlphaBlend );
 		++numOps;
@@ -1064,7 +1066,7 @@ int CTransitionTable::CreateNormalTransitions( const ShadowState_t& fromState, c
 
 	bool bDepthTestEnableDifferent = (toState.m_ZEnable != fromState.m_ZEnable);
 	bool bDepthFuncDifferent = (toState.m_ZEnable != D3DZB_FALSE) && (toState.m_ZFunc != fromState.m_ZFunc);
-	bool bDepthBiasDifferent = (toState.m_ZEnable != D3DZB_FALSE) && (toState.m_ZBias != fromState.m_ZBias);
+	bool bDepthBiasDifferent = (toState.m_ZBias != fromState.m_ZBias);
 	if (bForce || bDepthTestEnableDifferent || bDepthFuncDifferent || bDepthBiasDifferent)
 	{
 		AddTransition( RENDER_STATE_DepthTest );
@@ -1131,6 +1133,9 @@ int CTransitionTable::CreateNormalTransitions( const ShadowState_t& fromState, c
 	{
 		ADD_SAMPLER_STATE_TRANSITION( i, SRGBReadEnable );
 		ADD_SAMPLER_STATE_TRANSITION( i, Fetch4Enable );
+#ifdef DX_TO_GL_ABSTRACTION
+		ADD_SAMPLER_STATE_TRANSITION( i, ShadowFilterEnable );
+#endif
 	}
 
 	return numOps;
@@ -1143,7 +1148,7 @@ void CTransitionTable::CreateTransitionTableEntry( int to, int from )
 	COMPILE_TIME_ASSERT( sizeof(s_pTextureFunctionTable) == sizeof(ApplyStateFunc_t) * TEXTURE_STATE_COUNT );
 
 	// If from < 0, that means add *all* transitions into it.
-	unsigned short firstElem = m_TransitionOps.Count();
+	unsigned int firstElem = m_TransitionOps.Count();
 	unsigned short numOps = 0;
 
 	const ShadowState_t& toState = m_ShadowStateList[to];
@@ -1213,7 +1218,7 @@ void CTransitionTable::CreateTransitionTableEntry( int to, int from )
 
 	// An optimization to try to early out of the identical transition check
 	// taking advantage of the fact that the matrix is usually diagonal.
-	unsigned short nFirstTest = INVALID_TRANSITION_OP;
+	unsigned int nFirstTest = INVALID_TRANSITION_OP;
 	if (from >= 0)
 	{
 		TransitionList_t &diagonalList = m_TransitionTable[from][to]; 
@@ -1223,14 +1228,14 @@ void CTransitionTable::CreateTransitionTableEntry( int to, int from )
 		}
 	}
 
-	unsigned short identicalListFirstElem = FindIdenticalTransitionList( firstElem, numOps, nFirstTest ); 
+	unsigned int identicalListFirstElem = FindIdenticalTransitionList( firstElem, numOps, nFirstTest ); 
 	if (identicalListFirstElem == INVALID_TRANSITION_OP)
 	{
 		transition.m_FirstOperation = firstElem;
 		m_UniqueTransitions.Insert( transition );
-		Assert( (int)firstElem + (int)numOps < 65535 );
+		Assert( (int)firstElem + (int)numOps < 16777215 );
 
-		if( (int)firstElem + (int)numOps >= 65535 )
+		if( (int)firstElem + (int)numOps >= 16777215 )
 		{
 			Warning("**** WARNING: Transition table overflow. Grab Brian\n");
 		}
@@ -1289,6 +1294,9 @@ bool CTransitionTable::TestShadowState( const ShadowState_t& state, const Shadow
 	{
 		PERFORM_SAMPLER_STATE_TRANSITION( state, i, SRGBReadEnable );
 		PERFORM_SAMPLER_STATE_TRANSITION( state, i, Fetch4Enable );
+#ifdef DX_TO_GL_ABSTRACTION
+		PERFORM_SAMPLER_STATE_TRANSITION( state, i, ShadowFilterEnable );
+#endif
 	}
 
 	// Just make sure we've got a good snapshot
@@ -1314,8 +1322,8 @@ bool CTransitionTable::TestShadowState( const ShadowState_t& state, const Shadow
 //-----------------------------------------------------------------------------
 // Finds identical transition lists and shares them 
 //-----------------------------------------------------------------------------
-unsigned short CTransitionTable::FindIdenticalTransitionList( unsigned short firstElem, 
-					unsigned short numOps, unsigned short nFirstTest ) const
+unsigned int CTransitionTable::FindIdenticalTransitionList( unsigned int firstElem, 
+					unsigned short numOps, unsigned int nFirstTest ) const
 {
 	VPROF("CTransitionTable::FindIdenticalTransitionList");
 	// As it turns out, this works most of the time
@@ -1645,32 +1653,36 @@ void CTransitionTable::UseDefaultState( )
 	m_CurrentState.m_AlphaBlendEnable = false;
 	m_CurrentState.m_SrcBlend = D3DBLEND_ONE;
 	m_CurrentState.m_DestBlend = D3DBLEND_ZERO;
-	SetRenderState( D3DRS_ALPHABLENDENABLE, m_CurrentState.m_AlphaBlendEnable );
-	SetRenderState( D3DRS_SRCBLEND, m_CurrentState.m_SrcBlend );
-	SetRenderState( D3DRS_DESTBLEND, m_CurrentState.m_DestBlend );
+	m_CurrentState.m_BlendOp = D3DBLENDOP_ADD;
+	SetRenderStateConstMacro( D3DRS_ALPHABLENDENABLE, m_CurrentState.m_AlphaBlendEnable );
+	SetRenderStateConstMacro( D3DRS_SRCBLEND, m_CurrentState.m_SrcBlend );
+	SetRenderStateConstMacro( D3DRS_DESTBLEND, m_CurrentState.m_DestBlend );
+	SetRenderStateConstMacro( D3DRS_BLENDOP, m_CurrentState.m_BlendOp );
 
 	m_CurrentState.m_SeparateAlphaBlendEnable = false;
 	m_CurrentState.m_SrcBlendAlpha = D3DBLEND_ONE;
 	m_CurrentState.m_DestBlendAlpha = D3DBLEND_ZERO;
-	SetRenderState( D3DRS_SEPARATEALPHABLENDENABLE, m_CurrentState.m_SeparateAlphaBlendEnable );
-	SetRenderState( D3DRS_SRCBLENDALPHA, m_CurrentState.m_SrcBlendAlpha );
-	SetRenderState( D3DRS_DESTBLENDALPHA, m_CurrentState.m_DestBlendAlpha );
+	m_CurrentState.m_BlendOpAlpha = D3DBLENDOP_ADD;
+	SetRenderStateConstMacro( D3DRS_SEPARATEALPHABLENDENABLE, m_CurrentState.m_SeparateAlphaBlendEnable );
+	SetRenderStateConstMacro( D3DRS_SRCBLENDALPHA, m_CurrentState.m_SrcBlendAlpha );
+	SetRenderStateConstMacro( D3DRS_DESTBLENDALPHA, m_CurrentState.m_DestBlendAlpha );
+	SetRenderStateConstMacro( D3DRS_BLENDOPALPHA, m_CurrentState.m_BlendOpAlpha );
 
 	m_CurrentState.m_ZEnable = D3DZB_TRUE;
 	m_CurrentState.m_ZFunc = D3DCMP_LESSEQUAL;
 	m_CurrentState.m_ZBias = SHADER_POLYOFFSET_DISABLE;
-	SetRenderState( D3DRS_ZENABLE, m_CurrentState.m_ZEnable );
+	SetRenderStateConstMacro( D3DRS_ZENABLE, m_CurrentState.m_ZEnable );
 #if defined( _X360 )
-	//SetRenderState( D3DRS_HIZENABLE, m_CurrentState.m_ZEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
+	//SetRenderStateConstMacro( D3DRS_HIZENABLE, m_CurrentState.m_ZEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
 #endif
-	SetRenderState( D3DRS_ZFUNC, m_CurrentState.m_ZFunc );
+	SetRenderStateConstMacro( D3DRS_ZFUNC, m_CurrentState.m_ZFunc );
 
 	m_CurrentState.m_AlphaTestEnable = false;
 	m_CurrentState.m_AlphaFunc = D3DCMP_GREATEREQUAL;
 	m_CurrentState.m_AlphaRef = 0;
-	SetRenderState( D3DRS_ALPHATESTENABLE, m_CurrentState.m_AlphaTestEnable );
-	SetRenderState( D3DRS_ALPHAFUNC, m_CurrentState.m_AlphaFunc );
-	SetRenderState( D3DRS_ALPHAREF, m_CurrentState.m_AlphaRef );
+	SetRenderStateConstMacro( D3DRS_ALPHATESTENABLE, m_CurrentState.m_AlphaTestEnable );
+	SetRenderStateConstMacro( D3DRS_ALPHAFUNC, m_CurrentState.m_AlphaFunc );
+	SetRenderStateConstMacro( D3DRS_ALPHAREF, m_CurrentState.m_AlphaRef );
 
 	int nTextureStages = ShaderAPI()->GetActualTextureStageCount();
 	for ( int i = 0; i < nTextureStages; ++i)
@@ -1700,10 +1712,16 @@ void CTransitionTable::UseDefaultState( )
 		{
 			SetSamplerState( i, ATISAMP_FETCH4, SamplerState(i).m_Fetch4Enable ? ATI_FETCH4_ENABLE : ATI_FETCH4_DISABLE );
 		}
+		
+#ifdef DX_TO_GL_ABSTRACTION
+		SetSamplerState( i, D3DSAMP_SHADOWFILTER, SamplerState(i).m_ShadowFilterEnable );
+#endif
 	}
 
 	// Disable z overrides...
 	m_CurrentState.m_bOverrideDepthEnable = false;
+	m_CurrentState.m_bOverrideAlphaWriteEnable = false;
+	m_CurrentState.m_bOverrideColorWriteEnable = false;
 	m_CurrentState.m_ForceDepthFuncEquals = false;
 	m_CurrentState.m_bLinearColorSpaceFrameBufferEnable = false;
 	ApplyTransition( m_DefaultTransition, m_DefaultStateSnapshot );
@@ -1757,9 +1775,9 @@ void CTransitionTable::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 		if ( m_CurrentState.m_bOverrideDepthEnable )
 		{
 			SetZEnable( D3DZB_TRUE );
-			SetRenderState( D3DRS_ZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable );
+			SetRenderStateConstMacro( D3DRS_ZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable );
 #if defined( _X360 )
-			//SetRenderState( D3DRS_HIZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
+			//SetRenderStateConstMacro( D3DRS_HIZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
 #endif
 		}
 		else
@@ -1767,11 +1785,87 @@ void CTransitionTable::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 			if ( CurrentShadowState() )
 			{
 				SetZEnable( CurrentShadowState()->m_ZEnable );
-				SetRenderState( D3DRS_ZWRITEENABLE, CurrentShadowState()->m_ZWriteEnable );
+				SetRenderStateConstMacro( D3DRS_ZWRITEENABLE, CurrentShadowState()->m_ZWriteEnable );
 #if defined( _X360 )
-				//SetRenderState( D3DRS_HIZWRITEENABLE, CurrentShadowState()->m_ZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
+				//SetRenderStateConstMacro( D3DRS_HIZWRITEENABLE, CurrentShadowState()->m_ZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
 #endif
 			}
+		}
+	}
+}
+
+void CTransitionTable::OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable )
+{
+	if ( bOverrideEnable != m_CurrentState.m_bOverrideAlphaWriteEnable )
+	{
+		ShaderAPI()->FlushBufferedPrimitives();
+		m_CurrentState.m_bOverrideAlphaWriteEnable = bOverrideEnable;
+		m_CurrentState.m_bOverriddenAlphaWriteValue = bAlphaWriteEnable;
+
+		DWORD dwSetValue = m_CurrentState.m_ColorWriteEnable;
+		if ( m_CurrentState.m_bOverrideAlphaWriteEnable )
+		{			
+			if( m_CurrentState.m_bOverriddenAlphaWriteValue )
+			{
+				dwSetValue |= D3DCOLORWRITEENABLE_ALPHA;
+			}
+			else
+			{
+				dwSetValue &= ~D3DCOLORWRITEENABLE_ALPHA;
+			}
+		}
+		else
+		{
+			if ( CurrentShadowState() )
+			{
+				//probably being paranoid, but only copy the alpha flag from the shadow state
+				dwSetValue &= ~D3DCOLORWRITEENABLE_ALPHA;
+				dwSetValue |= CurrentShadowState()->m_ColorWriteEnable & D3DCOLORWRITEENABLE_ALPHA;
+			}
+		}
+
+		if( dwSetValue != m_CurrentState.m_ColorWriteEnable )
+		{
+			m_CurrentState.m_ColorWriteEnable = dwSetValue;
+			SetRenderState( D3DRS_COLORWRITEENABLE, m_CurrentState.m_ColorWriteEnable );
+		}
+	}
+}
+
+void CTransitionTable::OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable )
+{
+	if ( bOverrideEnable != m_CurrentState.m_bOverrideColorWriteEnable )
+	{
+		ShaderAPI()->FlushBufferedPrimitives();
+		m_CurrentState.m_bOverrideColorWriteEnable = bOverrideEnable;
+		m_CurrentState.m_bOverriddenColorWriteValue = bColorWriteEnable;
+
+		DWORD dwSetValue = m_CurrentState.m_ColorWriteEnable;
+		if ( m_CurrentState.m_bOverrideColorWriteEnable )
+		{			
+			if( m_CurrentState.m_bOverriddenColorWriteValue )
+			{
+				dwSetValue |= (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+			}
+			else
+			{
+				dwSetValue &= ~(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+			}
+		}
+		else
+		{
+			if ( CurrentShadowState() )
+			{
+				//probably being paranoid, but only copy the alpha flag from the shadow state
+				dwSetValue &= ~(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+				dwSetValue |= CurrentShadowState()->m_ColorWriteEnable & (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+			}
+		}
+
+		if( dwSetValue != m_CurrentState.m_ColorWriteEnable )
+		{
+			m_CurrentState.m_ColorWriteEnable = dwSetValue;
+			SetRenderState( D3DRS_COLORWRITEENABLE, m_CurrentState.m_ColorWriteEnable );
 		}
 	}
 }
@@ -1801,9 +1895,31 @@ void CTransitionTable::PerformShadowStateOverrides( )
 	if ( m_CurrentState.m_bOverrideDepthEnable )
 	{
 		SetZEnable( D3DZB_TRUE );
-		SetRenderState( D3DRS_ZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable );
+		SetRenderStateConstMacro( D3DRS_ZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable );
 #if defined( _X360 )
-		//SetRenderState( D3DRS_HIZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
+		//SetRenderStateConstMacro( D3DRS_HIZWRITEENABLE, m_CurrentState.m_OverrideZWriteEnable ? D3DHIZ_AUTOMATIC : D3DHIZ_DISABLE );
 #endif
+	}
+
+	if ( m_CurrentState.m_bOverrideAlphaWriteEnable )
+	{
+		DWORD dwSetValue = m_CurrentState.m_ColorWriteEnable & ~D3DCOLORWRITEENABLE_ALPHA;
+		dwSetValue |= m_CurrentState.m_bOverriddenAlphaWriteValue ? D3DCOLORWRITEENABLE_ALPHA : 0;
+		if ( dwSetValue != m_CurrentState.m_ColorWriteEnable )
+		{
+			m_CurrentState.m_ColorWriteEnable = dwSetValue;
+			SetRenderState( D3DRS_COLORWRITEENABLE, m_CurrentState.m_ColorWriteEnable );
+		}
+	}
+
+	if ( m_CurrentState.m_bOverrideColorWriteEnable )
+	{
+		DWORD dwSetValue = m_CurrentState.m_ColorWriteEnable & ~(D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE);
+		dwSetValue |= m_CurrentState.m_bOverriddenColorWriteValue ? (D3DCOLORWRITEENABLE_RED | D3DCOLORWRITEENABLE_GREEN | D3DCOLORWRITEENABLE_BLUE) : 0;
+		if ( dwSetValue != m_CurrentState.m_ColorWriteEnable )
+		{
+			m_CurrentState.m_ColorWriteEnable = dwSetValue;
+			SetRenderState( D3DRS_COLORWRITEENABLE, m_CurrentState.m_ColorWriteEnable );
+		}
 	}
 }

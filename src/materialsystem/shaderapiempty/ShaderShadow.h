@@ -305,6 +305,9 @@ public:
 	{
 	}
 
+	virtual void BlendOp(ShaderBlendOp_t blendOp) {}
+	virtual void BlendOpSeparateAlpha(ShaderBlendOp_t blendOp) {}
+
 	bool m_IsTranslucent;
 	bool m_IsAlphaTested;
 	bool m_bIsDepthWriteEnabled;

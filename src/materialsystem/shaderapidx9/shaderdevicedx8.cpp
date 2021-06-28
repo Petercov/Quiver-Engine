@@ -23,6 +23,7 @@
 #include "materialsystem/materialsystem_config.h"
 #include "vertexshaderdx8.h"
 #include "recording.h"
+#include "tier0/vprof.h"
 
 #ifndef _X360
 #include "wmi.h"
@@ -52,6 +53,14 @@ EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CShaderDeviceMgrDx8, IShaderDeviceMgr,
 IDirect3D9 *m_pD3D;
 #endif
 
+IDirect3DDevice *g_pD3DDevice = NULL;
+
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9)
+// HACK: need to pass knowledge of D3D9Ex usage into callers of D3D Create* methods
+// so they do not try to specify D3DPOOL_MANAGED, which is unsupported in D3D9Ex
+bool g_ShaderDeviceUsingD3D9Ex = false;
+static ConVar mat_supports_d3d9ex( "mat_supports_d3d9ex", "0", FCVAR_HIDDEN );
+#endif
 
 // hook into mat_forcedynamic from the engine.
 static ConVar mat_forcedynamic( "mat_forcedynamic", "0", FCVAR_CHEAT );
@@ -92,7 +101,59 @@ bool CShaderDeviceMgrDx8::Connect( CreateInterfaceFn factory )
 	if ( !BaseClass::Connect( factory ) )
 		return false;
 
-	m_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+#if defined ( DX_TO_GL_ABSTRACTION )
+	gGL = ToGLConnectLibraries( factory );
+#endif
+
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9) && !defined(RECORDING) && !defined( DX_TO_GL_ABSTRACTION )
+	m_pD3D = NULL;
+
+	// Attempt to create a D3D9Ex device (Windows Vista and later) if possible
+	bool bD3D9ExForceDisable = ( CommandLine()->FindParm( "-nod3d9ex" ) != 0 ) ||
+								( CommandLine()->ParmValue( "-dxlevel", 95 ) < 90 );
+
+	bool bD3D9ExAvailable = false;
+	if ( HMODULE hMod = ::LoadLibraryA( "d3d9.dll" ) )
+	{
+		typedef HRESULT ( WINAPI *CreateD3D9ExFunc_t )( UINT, IUnknown** );
+		if ( CreateD3D9ExFunc_t pfnCreateD3D9Ex = (CreateD3D9ExFunc_t) ::GetProcAddress( hMod, "Direct3DCreate9Ex" ) )
+		{
+			IUnknown *pD3D9Ex = NULL;
+			if ( (*pfnCreateD3D9Ex)( D3D_SDK_VERSION, &pD3D9Ex ) == S_OK && pD3D9Ex )
+			{
+				bD3D9ExAvailable = true;
+				if ( bD3D9ExForceDisable )
+				{
+					pD3D9Ex->Release();
+				}
+				else
+				{
+					g_ShaderDeviceUsingD3D9Ex = true;
+					// The following is more "correct" but incompatible with the Steam overlay:
+					//pD3D9Ex->QueryInterface( IID_IDirect3D9, (void**) &m_pD3D );
+					//pD3D9Ex->Release();
+					m_pD3D = static_cast< IDirect3D9* >( pD3D9Ex );
+				}
+			}
+		}
+		::FreeLibrary( hMod );
+	}
+
+	if ( !m_pD3D )
+	{
+		g_ShaderDeviceUsingD3D9Ex = false;
+		m_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+	}
+	
+	mat_supports_d3d9ex.SetValue( bD3D9ExAvailable ? 1 : 0 );
+#else
+	#if defined( DO_DX9_HOOK )
+		m_pD3D = Direct3DCreate9Hook(D3D_SDK_VERSION);
+	#else
+		m_pD3D = Direct3DCreate9(D3D_SDK_VERSION);
+	#endif
+#endif
+
 	if ( !m_pD3D )
 	{
 		Warning( "Failed to create D3D9!\n" );
@@ -185,6 +246,7 @@ void CShaderDeviceMgrDx8::InitAdapterInfo()
 	m_bAdapterInfoIntialized = true;
 	m_Adapters.RemoveAll();
 
+	Assert(m_pD3D);
 	int nCount = m_pD3D->GetAdapterCount( );
 	for( int i = 0; i < nCount; ++i )
 	{
@@ -220,7 +282,11 @@ void CShaderDeviceMgrDx8::InitAdapterInfo()
 //--------------------------------------------------------------------------------
 void CShaderDeviceMgrDx8::CheckBorderColorSupport( HardwareCaps_t *pCaps, int nAdapter )
 {
+#ifdef DX_TO_GL_ABSTRACTION
+	if( true )
+#else
 	if( IsX360() )
+#endif
 	{
 		pCaps->m_bSupportsBorderColor = true;
 	}
@@ -229,31 +295,6 @@ void CShaderDeviceMgrDx8::CheckBorderColorSupport( HardwareCaps_t *pCaps, int nA
 		pCaps->m_bSupportsBorderColor = false;
 	}
 }
-
-//--------------------------------------------------------------------------------
-// Code to detect support for ATI2N and ATI1N formats for normal map compression
-//--------------------------------------------------------------------------------
-void CShaderDeviceMgrDx8::CheckNormalCompressionSupport( HardwareCaps_t *pCaps, int nAdapter )
-{
-	pCaps->m_bSupportsNormalMapCompression = false;
-
-#if defined( COMPRESSED_NORMAL_FORMATS )
-//	Check for normal map compression support on PC when we decide to ship it...
-//  Remove relevant IsX360() calls in CTexture when we plan to ship on PC
-//	360 Requires more work in the download logic
-//
-//	// Test ATI2N support
-//	if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, 0, D3DRTYPE_TEXTURE, ATIFMT_ATI2N ) == S_OK )
-//	{
-//		// Test ATI1N support
-//		if ( m_pD3D->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8, 0, D3DRTYPE_TEXTURE, ATIFMT_ATI1N ) == S_OK )
-//		{
-//			pCaps->m_bSupportsNormalMapCompression = true;
-//		}
-//	}	
-#endif
-}
-
 
 //--------------------------------------------------------------------------------
 // Vendor-dependent code to detect support for various flavors of shadow mapping
@@ -268,10 +309,17 @@ void CShaderDeviceMgrDx8::CheckVendorDependentShadowMappingSupport( HardwareCaps
 	}
 
 #if defined( _X360 )
-	pCaps->m_ShadowDepthTextureFormat = ReverseDepthOnX360() ? IMAGE_FORMAT_X360_DST24F : IMAGE_FORMAT_X360_DST24;
+	pCaps->m_HighPrecisionShadowDepthTextureFormat = pCaps->m_ShadowDepthTextureFormat = ReverseDepthOnX360() ? IMAGE_FORMAT_X360_DST24F : IMAGE_FORMAT_X360_DST24;
 	pCaps->m_bSupportsShadowDepthTextures = true;
 	pCaps->m_bSupportsFetch4 = false;
-	pCaps->m_HighPrecisionShadowDepthTextureFormat = pCaps->m_ShadowDepthTextureFormat;
+	return;
+#elif defined ( DX_TO_GL_ABSTRACTION )
+	// We may want to only do this on the higher-end Mac SKUs, since it's not free...
+	pCaps->m_HighPrecisionShadowDepthTextureFormat = pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_NV_DST16; // This format shunts us down the right shader combo path
+
+	pCaps->m_bSupportsShadowDepthTextures = true;
+
+	pCaps->m_bSupportsFetch4 = false;
 	return;
 #endif
 
@@ -410,6 +458,15 @@ void CShaderDeviceMgrDx8::CheckVendorDependentAlphaToCoverage( HardwareCaps_t *p
 {
 	pCaps->m_bSupportsAlphaToCoverage = false;
 
+	// Bail out on OpenGL
+#ifdef DX_TO_GL_ABSTRACTION
+	pCaps->m_bSupportsAlphaToCoverage	 = true;
+	pCaps->m_AlphaToCoverageEnableValue	 = TRUE;
+	pCaps->m_AlphaToCoverageDisableValue = FALSE;
+	pCaps->m_AlphaToCoverageState		 = D3DRS_ADAPTIVETESS_Y; // Just match the NVIDIA state hackery
+	return;
+#endif
+
 	if ( pCaps->m_nDXSupportLevel < 90 )
 		return;
 
@@ -471,9 +528,11 @@ void CShaderDeviceMgrDx8::CheckVendorDependentAlphaToCoverage( HardwareCaps_t *p
 	}
 }
 
-ConVar mat_hdr_level( "mat_hdr_level", "2" );
+ConVar mat_hdr_level( "mat_hdr_level", "2", FCVAR_ARCHIVE );
 //ConVar mat_slopescaledepthbias_shadowmap( "mat_slopescaledepthbias_shadowmap", "16", FCVAR_CHEAT );
 //ConVar mat_depthbias_shadowmap(	"mat_depthbias_shadowmap", "0.0005", FCVAR_CHEAT  );
+// For testing Fast Clip
+ConVar mat_fastclip( "mat_fastclip", "0", FCVAR_CHEAT  );
 
 //-----------------------------------------------------------------------------
 // Determine capabilities
@@ -493,6 +552,43 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 	hr = m_pD3D->GetAdapterIdentifier( nAdapter, D3DENUM_WHQL_LEVEL, &ident );
 	if ( FAILED( hr ) )
 		return false;
+
+	if ( IsOpenGL() )
+	{
+		if ( !ident.DeviceId && !ident.VendorId )
+		{
+			ident.DeviceId = 1; // fake default device/vendor ID for OpenGL
+			ident.VendorId = 1;
+		}
+	}
+
+	// Intended for debugging only
+	if ( CommandLine()->CheckParm( "-force_device_id" ) )
+	{
+		const char *pDevID = CommandLine()->ParmValue( "-force_device_id", "" );
+		if ( pDevID )
+		{
+			int nDevID = V_atoi( pDevID );	// use V_atoi for hex support
+			if ( nDevID > 0 )
+			{
+				ident.DeviceId = nDevID;
+			}
+		}
+	}
+
+	// Intended for debugging only
+	if ( CommandLine()->CheckParm( "-force_vendor_id" ) )
+	{
+		const char *pVendorID = CommandLine()->ParmValue( "-force_vendor_id", "" );
+		if ( pVendorID )
+		{
+			int nVendorID = V_atoi( pVendorID );	// use V_atoi for hex support
+			if ( pVendorID > 0 )
+			{
+				ident.VendorId = nVendorID;
+			}
+		}
+	}
 
 	Q_strncpy( pCaps->m_pDriverName, ident.Description, MATERIAL_ADAPTER_NAME_LENGTH );
 	pCaps->m_VendorID = ident.VendorId;
@@ -531,6 +627,18 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 	pCaps->m_SupportsShaderModel_3_0 = ( caps.PixelShaderVersion & 0xffff ) >= 0x0300;
 	pCaps->m_SupportsMipmappedCubemaps = ( caps.TextureCaps & D3DPTEXTURECAPS_MIPCUBEMAP ) ? true : false;
 #endif
+
+	// Slam this off for OpenGL
+	if ( IsOpenGL() )
+	{
+		pCaps->m_SupportsShaderModel_3_0 = false;
+	}
+
+	// Slam 3.0 shaders off for Intel
+	if ( pCaps->m_VendorID == VENDORID_INTEL )
+	{
+		pCaps->m_SupportsShaderModel_3_0 = false;
+	}
 
 	pCaps->m_MaxVertexShader30InstructionSlots = 0;
 	pCaps->m_MaxPixelShader30InstructionSlots  = 0;
@@ -571,7 +679,14 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 		pCaps->m_SupportsVertexShaders_2_0 = true;
 	}
 
-	// NOTE: Texture stages is a fixed-function concept which also isu 
+#ifdef OSX
+	// Static control flow is disabled by default on OSX (the Mac version of togl has known bugs preventing this path from working properly that we've fixed in togl linux/win)
+	pCaps->m_bSupportsStaticControlFlow = CommandLine()->CheckParm( "-glslcontrolflow" ) != NULL;
+#else
+	pCaps->m_bSupportsStaticControlFlow = !CommandLine()->CheckParm( "-noglslcontrolflow" );
+#endif
+
+	// NOTE: Texture stages is a fixed-function concept
 	// NOTE: Normally, the number of texture units == the number of texture
 	// stages except for NVidia hardware, which reports more stages than units.
 	// The reason for this is because they expose the inner hardware pixel
@@ -589,8 +704,8 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 	}
 
 	// Clamp
-	pCaps->m_NumSamplers = min( pCaps->m_NumSamplers, MAX_SAMPLERS );
-	pCaps->m_NumTextureStages = min( pCaps->m_NumTextureStages, MAX_TEXTURE_STAGES );
+	pCaps->m_NumSamplers = min( pCaps->m_NumSamplers, (int)MAX_SAMPLERS );
+	pCaps->m_NumTextureStages = min( pCaps->m_NumTextureStages, (int)MAX_TEXTURE_STAGES );
 
 	if ( D3DSupportsCompressedTextures() )
 	{
@@ -603,6 +718,14 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 
 	pCaps->m_bSupportsAnisotropicFiltering = (caps.TextureFilterCaps & D3DPTFILTERCAPS_MINFANISOTROPIC) != 0;
 	pCaps->m_bSupportsMagAnisotropicFiltering = (caps.TextureFilterCaps & D3DPTFILTERCAPS_MAGFANISOTROPIC) != 0;
+
+	// OpenGL does not support this--at least not on OSX which is the primary GL target, so just don't use that path on GL at all.
+#if !defined( DX_TO_GL_ABSTRACTION )
+	pCaps->m_bCanStretchRectFromTextures = ( ( caps.DevCaps2 & D3DDEVCAPS2_CAN_STRETCHRECT_FROM_TEXTURES ) != 0 ) && ( pCaps->m_VendorID != VENDORID_INTEL );
+#else
+	pCaps->m_bCanStretchRectFromTextures = false;
+#endif
+
 	pCaps->m_nMaxAnisotropy = pCaps->m_bSupportsAnisotropicFiltering ? caps.MaxAnisotropy : 1; 
 
 	pCaps->m_SupportsCubeMaps = ( caps.TextureCaps & D3DPTEXTURECAPS_CUBEMAP ) ? true : false;
@@ -658,6 +781,12 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 	if ( pCaps->m_MaxNumLights > MAX_NUM_LIGHTS )
 	{
 		pCaps->m_MaxNumLights = MAX_NUM_LIGHTS;
+	}
+
+	if ( IsOpenGL() )
+	{
+		// Set according to control flow bit on OpenGL
+		pCaps->m_MaxNumLights = MIN( pCaps->m_MaxNumLights, ( pCaps->m_bSupportsStaticControlFlow && pCaps->m_SupportsPixelShaders_2_b ) ? MAX_NUM_LIGHTS : ( MAX_NUM_LIGHTS - 2 ) );
 	}
 
 	if ( pCaps->m_bSoftwareVertexProcessing )
@@ -719,9 +848,17 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 		pCaps->m_MaxUserClipPlanes = MAXUSERCLIPPLANES;
 	}
 
-	pCaps->m_UseFastClipping = false;
-
-	// query for SRGB support as needed for our DX 9 stuff
+	pCaps->m_FakeSRGBWrite = false;
+	pCaps->m_CanDoSRGBReadFromRTs = true;
+	pCaps->m_bSupportsGLMixedSizeTargets = false;
+#ifdef DX_TO_GL_ABSTRACTION
+	// using #if because we're referencing fields in the RHS which don't exist in Windows headers for the caps9 struct
+	pCaps->m_FakeSRGBWrite = caps.FakeSRGBWrite != 0;
+	pCaps->m_CanDoSRGBReadFromRTs = caps.CanDoSRGBReadFromRTs != 0;
+	pCaps->m_bSupportsGLMixedSizeTargets = caps.MixedSizeTargets != 0; 	
+#endif
+	
+	// Query for SRGB support as needed for our DX 9 stuff
 	if ( IsPC() || !IsX360() )
 	{
 		pCaps->m_SupportsSRGB = ( D3D()->CheckDeviceFormat( nAdapter, DX8_DEVTYPE,
@@ -747,6 +884,11 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 
 	pCaps->m_bSupportsVertexTextures = ( D3D()->CheckDeviceFormat( nAdapter, DX8_DEVTYPE, D3DFMT_X8R8G8B8,
 		D3DUSAGE_QUERY_VERTEXTEXTURE, D3DRTYPE_TEXTURE, D3DFMT_R32F ) == S_OK );
+
+	if ( IsOpenGL() )
+	{
+		pCaps->m_bSupportsVertexTextures = false;
+	}
 
 	// FIXME: vs30 has a fixed setting here at 4.
 	// Future hardware will need some other way of computing this.
@@ -783,6 +925,15 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 
 	// Assume not DX10.  Check below.
 	pCaps->m_bDX10Card = false;
+	pCaps->m_bDX10Blending = false;
+
+	if ( IsOpenGL() && ( pCaps->m_VendorID == 1 ) )
+	{
+		// Linux/Win OpenGL - always assume the device supports DX10 style blending
+		pCaps->m_bFogColorAlwaysLinearSpace = true;
+		pCaps->m_bDX10Card = true;
+		pCaps->m_bDX10Blending = true;
+	}
 
 	// NVidia wants fog color to be specified in linear space
 	if ( IsPC() && pCaps->m_SupportsSRGB )
@@ -791,25 +942,71 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 		{
 			pCaps->m_bFogColorSpecifiedInLinearSpace = true;
 
-			// On G80, always specify in linear space
-			if ( pCaps->m_bSupportsFloat32RenderTargets )
+			if ( IsOpenGL() )
 			{
-				pCaps->m_bFogColorAlwaysLinearSpace = true;
-				pCaps->m_bDX10Card = true;
+				// If we're not the Quadro 4500 or GeForce 7x000, we're an NVIDIA DX10 part on MacOS
+				if ( !( (pCaps->m_DeviceID == 0x009d) || ( (pCaps->m_DeviceID >= 0x0391) && (pCaps->m_DeviceID <= 0x0395) ) ) )
+				{
+					pCaps->m_bFogColorAlwaysLinearSpace = true;
+					pCaps->m_bDX10Card = true;
+					pCaps->m_bDX10Blending = true;
+				}
+			}
+			else
+			{	
+				// On G80 and later, always specify in linear space
+				if ( pCaps->m_bSupportsFloat32RenderTargets )
+				{
+					pCaps->m_bFogColorAlwaysLinearSpace = true;
+					pCaps->m_bDX10Card = true;
+					pCaps->m_bDX10Blending = true;
+				}
 			}
 		}
 		else if ( pCaps->m_VendorID == VENDORID_ATI )
 		{
-			// Check for DX10 part
-			pCaps->m_bDX10Card = pCaps->m_SupportsShaderModel_3_0 &&
-							   ( pCaps->m_MaxVertexShader30InstructionSlots > 1024 ) &&
-							   ( pCaps->m_MaxPixelShader30InstructionSlots > 512 ) ;
+			if ( IsOpenGL() )
+			{
+				// If we're not a Radeon X1x00 (device IDs in this range), we're a DX10 chip
+				if ( !( (pCaps->m_DeviceID >= 0x7109) && (pCaps->m_DeviceID <= 0x7291) ) )
+				{
+					pCaps->m_bFogColorSpecifiedInLinearSpace = true;
+					pCaps->m_bFogColorAlwaysLinearSpace = true;
+					pCaps->m_bDX10Card = true;
+					pCaps->m_bDX10Blending = true;
+				}
+			}
+			else
+			{
+				// Check for DX10 part
+				pCaps->m_bDX10Card = pCaps->m_SupportsShaderModel_3_0 &&
+				( pCaps->m_MaxVertexShader30InstructionSlots > 1024 ) &&
+				( pCaps->m_MaxPixelShader30InstructionSlots > 512 ) ;
+				
+				// On ATI, DX10 card means DX10 blending
+				pCaps->m_bDX10Blending = pCaps->m_bDX10Card;
 
-			if( pCaps->m_bDX10Card )
+				if( pCaps->m_bDX10Blending )
+				{
+					pCaps->m_bFogColorSpecifiedInLinearSpace = true;
+					pCaps->m_bFogColorAlwaysLinearSpace = true;
+				}
+			}
+		}
+		else if ( pCaps->m_VendorID == VENDORID_INTEL )
+		{
+			// Intel does not have performant vertex textures
+			pCaps->m_bDX10Card = false;
+
+			// Intel supports DX10 SRGB on Broadwater and better
+			// The two checks are for devices from GMA generation (0x29A2-0x2A43) and HD graphics (0x0042-0x2500)
+			pCaps->m_bDX10Blending = ( ( pCaps->m_DeviceID >= 0x29A2 ) && ( pCaps->m_DeviceID <= 0x2A43  ) ) ||
+									 ( ( pCaps->m_DeviceID >= 0x0042 ) && ( pCaps->m_DeviceID <= 0x2500  ) );
+
+			if( pCaps->m_bDX10Blending )
 			{
 				pCaps->m_bFogColorSpecifiedInLinearSpace = true;
 				pCaps->m_bFogColorAlwaysLinearSpace = true;
-				pCaps->m_bDX10Card = true;
 			}
 		}
 	}
@@ -865,13 +1062,17 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 	// Compute the effective DX support level based on all the other caps
 	ComputeDXSupportLevel( *pCaps );
 	int nCmdlineMaxDXLevel = CommandLine()->ParmValue( "-maxdxlevel", 0 );
+	if ( IsOpenGL() && ( nCmdlineMaxDXLevel > 0 ) )
+	{
+		// Prevent customers from slamming us below DX level 90 in OpenGL mode.
+		nCmdlineMaxDXLevel = MAX( nCmdlineMaxDXLevel, 90 );
+	}
 	if( nCmdlineMaxDXLevel > 0 )
 	{
 		pCaps->m_nMaxDXSupportLevel = min( pCaps->m_nMaxDXSupportLevel, nCmdlineMaxDXLevel );
 	}
 	pCaps->m_nDXSupportLevel = pCaps->m_nMaxDXSupportLevel;
 
-	// FIXME: m_nDXSupportLevel is uninitialised at this point!! Need to relocate this test:
 	int nModelIndex = pCaps->m_nDXSupportLevel < 90 ? VERTEX_SHADER_MODEL - 10 : VERTEX_SHADER_MODEL;
 	pCaps->m_MaxVertexShaderBlendMatrices = (pCaps->m_NumVertexShaderConstants - nModelIndex) / 3;
 
@@ -880,13 +1081,11 @@ bool CShaderDeviceMgrDx8::ComputeCapsFromD3D( HardwareCaps_t *pCaps, int nAdapte
 		pCaps->m_MaxVertexShaderBlendMatrices = NUM_MODEL_TRANSFORMS;
 	}
 
-	CheckNormalCompressionSupport( pCaps, nAdapter );
-
 	CheckBorderColorSupport( pCaps, nAdapter );
 
-	// This may get more complex if we start using multiple flavours of compressed vertex - for now it's "on or off"
-	pCaps->m_SupportsCompressedVertices = pCaps->m_nDXSupportLevel >= 90 ? VERTEX_COMPRESSION_ON : VERTEX_COMPRESSION_NONE;
-	if ( CommandLine()->CheckParm( "-no_compressed_verts" ) )
+	// This may get more complex if we start using multiple flavors of compressed vertex - for now it's "on or off"
+	pCaps->m_SupportsCompressedVertices = ( pCaps->m_nDXSupportLevel >= 90 ) && ( pCaps->m_CanDoSRGBReadFromRTs ) ? VERTEX_COMPRESSION_ON : VERTEX_COMPRESSION_NONE;
+	if ( CommandLine()->CheckParm( "-no_compressed_verts" ) )						  // m_CanDoSRGBReadFromRTs limits us to Snow Leopard or later on OSX
 	{
 		pCaps->m_SupportsCompressedVertices = VERTEX_COMPRESSION_NONE;
 	}
@@ -938,13 +1137,15 @@ void CShaderDeviceMgrDx8::ComputeDXSupportLevel( HardwareCaps_t &caps )
 		return;
 	}
 
-	if ( caps.m_SupportsShaderModel_3_0 ) // Note that we don't tie vertex textures to 30 shaders anymore
+	bool bIsOpenGL = IsOpenGL();
+
+	if ( caps.m_SupportsShaderModel_3_0 && !bIsOpenGL ) // Note that we don't tie vertex textures to 30 shaders anymore
 	{
 		caps.m_nMaxDXSupportLevel = 95;
 		return;
 	}
 
-	// NOTE: sRGB is currently required for dx90 because it isn't doing 
+	// NOTE: sRGB is currently required for DX90 because it isn't doing 
 	// gamma correctly if that feature doesn't exist
 	if ( caps.m_SupportsVertexShaders_2_0 && caps.m_SupportsPixelShaders_2_0 && caps.m_SupportsSRGB )
 	{
@@ -1215,14 +1416,21 @@ bool CShaderDeviceMgrDx8::ValidateMode( int nAdapter, const ShaderDeviceInfo_t &
 		return false;
 
 	ShaderDisplayMode_t displayMode;
-	GetCurrentModeInfo( &displayMode, nAdapter );
 
 	if ( info.m_bWindowed )
 	{
+		// windowed mode always appears on the primary display, so we should use that adapter's
+		// settings
+		GetCurrentModeInfo( &displayMode, 0 );
+
 		// make sure the window fits within the current video mode
 		if ( ( info.m_DisplayMode.m_nWidth > displayMode.m_nWidth ) ||
 			 ( info.m_DisplayMode.m_nHeight > displayMode.m_nHeight ) )
 			return false;
+	}
+	else
+	{
+		GetCurrentModeInfo( &displayMode, nAdapter );
 	}
 
 	// Make sure the image format requested is valid
@@ -1239,9 +1447,16 @@ int CShaderDeviceMgrDx8::GetVidMemBytes( int nAdapter ) const
 {
 #if defined( _X360 )
 	return 256*1024*1024;
+#elif defined (DX_TO_GL_ABSTRACTION)
+	D3DADAPTER_IDENTIFIER9 devIndentifier;
+	D3D()->GetAdapterIdentifier( nAdapter, D3DENUM_WHQL_LEVEL, &devIndentifier );
+	return devIndentifier.VideoMemory;
 #else
 	// FIXME: This currently ignores the adapter
-	return ::GetVidMemBytes();
+	uint64 nBytes = ::GetVidMemBytes();
+	if ( nBytes > INT_MAX )
+		return INT_MAX;
+	return nBytes;
 #endif
 }
 
@@ -1270,7 +1485,11 @@ IDirect3DDevice *m_pD3DDevice;
 CShaderDeviceDx8::CShaderDeviceDx8()
 {
 	m_pD3DDevice = NULL;
-	m_pFrameSyncQueryObject = NULL;
+	for ( int i = 0; i < ARRAYSIZE(m_pFrameSyncQueryObject); i++ )
+	{
+		m_pFrameSyncQueryObject[i] = NULL;
+		m_bQueryIssued[i] = false;
+	}
 	m_pFrameSyncTexture = NULL;
 	m_bQueuedDeviceLost = false;
 	m_DeviceState = DEVICE_STATE_OK;
@@ -1279,6 +1498,7 @@ CShaderDeviceDx8::CShaderDeviceDx8()
 	m_bPendingVideoModeChange = false;
 	m_DeviceSupportsCreateQuery = -1;
 	m_bUsingStencil = false;
+	m_bResourcesReleased = false;
 	m_iStencilBufferBits = 0;
 	m_NonInteractiveRefresh.m_Mode = MATERIAL_NON_INTERACTIVE_MODE_NONE;
 	m_NonInteractiveRefresh.m_pVertexShader = NULL;
@@ -1612,6 +1832,29 @@ int CShaderDeviceDx8::GetCurrentAdapter() const
 
 
 //-----------------------------------------------------------------------------
+// Returns the current adapter in use
+//-----------------------------------------------------------------------------
+char *CShaderDeviceDx8::GetDisplayDeviceName() 
+{
+	if( m_sDisplayDeviceName.IsEmpty() )
+	{
+		D3DADAPTER_IDENTIFIER9 ident;
+		// On Win10, this function is getting called with m_nAdapter still initialized to -1.
+		// It's failing, and m_sDisplayDeviceName has garbage, and tf2 fails to launch.
+		// To repro this, run "hl2.exe -dev -fullscreen -game tf" on Win10.
+		HRESULT hr = D3D()->GetAdapterIdentifier( Max( m_nAdapter, 0 ), 0, &ident );
+		if ( FAILED(hr) )
+		{
+			Assert( false );
+			ident.DeviceName[0] = 0;
+		}
+		m_sDisplayDeviceName = ident.DeviceName;
+	}
+	return m_sDisplayDeviceName.GetForModify();
+}
+
+
+//-----------------------------------------------------------------------------
 // Use this to spew information about the 3D layer 
 //-----------------------------------------------------------------------------
 void CShaderDeviceDx8::SpewDriverInfo() const
@@ -1822,6 +2065,83 @@ void CShaderDeviceDx8::DetectQuerySupport( IDirect3DDevice9 *pD3DDevice )
 }
 
 
+const char *GetD3DErrorText( HRESULT hr )
+{
+	const char *pszMoreInfo = NULL;
+
+#if defined( _WIN32 ) && !defined(DX_TO_GL_ABSTRACTION)
+	switch ( hr )
+	{
+	case D3DERR_WRONGTEXTUREFORMAT:
+		pszMoreInfo = "D3DERR_WRONGTEXTUREFORMAT: The pixel format of the texture surface is not valid.";
+		break;
+	case D3DERR_UNSUPPORTEDCOLOROPERATION:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDCOLOROPERATION: The device does not support a specified texture-blending operation for color values.";
+		break;
+	case D3DERR_UNSUPPORTEDCOLORARG:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDCOLORARG: The device does not support a specified texture-blending argument for color values.";
+		break;
+	case D3DERR_UNSUPPORTEDALPHAOPERATION:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDALPHAOPERATION: The device does not support a specified texture-blending operation for the alpha channel.";
+		break;
+	case D3DERR_UNSUPPORTEDALPHAARG:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDALPHAARG: The device does not support a specified texture-blending argument for the alpha channel.";
+		break;
+	case D3DERR_TOOMANYOPERATIONS:
+		pszMoreInfo = "D3DERR_TOOMANYOPERATIONS: The application is requesting more texture-filtering operations than the device supports.";
+		break;
+	case D3DERR_CONFLICTINGTEXTUREFILTER:
+		pszMoreInfo = "D3DERR_CONFLICTINGTEXTUREFILTER: The current texture filters cannot be used together.";
+		break;
+	case D3DERR_UNSUPPORTEDFACTORVALUE:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDFACTORVALUE: The device does not support the specified texture factor value.";
+		break;
+	case D3DERR_CONFLICTINGRENDERSTATE:
+		pszMoreInfo = "D3DERR_CONFLICTINGRENDERSTATE: The currently set render states cannot be used together.";
+		break;
+	case D3DERR_UNSUPPORTEDTEXTUREFILTER:
+		pszMoreInfo = "D3DERR_UNSUPPORTEDTEXTUREFILTER: The device does not support the specified texture filter.";
+		break;
+	case D3DERR_CONFLICTINGTEXTUREPALETTE:
+		pszMoreInfo = "D3DERR_CONFLICTINGTEXTUREPALETTE: The current textures cannot be used simultaneously.";
+		break;
+	case D3DERR_DRIVERINTERNALERROR:
+		pszMoreInfo = "D3DERR_DRIVERINTERNALERROR: Internal driver error.";
+		break;
+	case D3DERR_NOTFOUND:
+		pszMoreInfo = "D3DERR_NOTFOUND: The requested item was not found.";
+		break;
+	case D3DERR_DEVICELOST:
+		pszMoreInfo = "D3DERR_DEVICELOST: The device has been lost but cannot be reset at this time. Therefore, rendering is not possible.";
+		break;
+	case D3DERR_DEVICENOTRESET:
+		pszMoreInfo = "D3DERR_DEVICENOTRESET: The device has been lost.";
+		break;
+	case D3DERR_NOTAVAILABLE:
+		pszMoreInfo = "D3DERR_NOTAVAILABLE: This device does not support the queried technique.";
+		break;
+	case D3DERR_OUTOFVIDEOMEMORY:
+		pszMoreInfo = "D3DERR_OUTOFVIDEOMEMORY: Direct3D does not have enough display memory to perform the operation. The device is using more resources in a single scene than can fit simultaneously into video memory.";
+		break;
+	case D3DERR_INVALIDDEVICE:
+		pszMoreInfo = "D3DERR_INVALIDDEVICE: The requested device type is not valid.";
+		break;
+	case D3DERR_INVALIDCALL:
+		pszMoreInfo = "D3DERR_INVALIDCALL: The method call is invalid.";
+		break;
+	case D3DERR_DRIVERINVALIDCALL:
+		pszMoreInfo = "D3DERR_DRIVERINVALIDCALL";
+		break;
+	case D3DERR_WASSTILLDRAWING:
+		pszMoreInfo = "D3DERR_WASSTILLDRAWING: The previous blit operation that is transferring information to or from this surface is incomplete.";
+		break;
+	}
+#endif // _WIN32
+
+	return pszMoreInfo;
+}
+
+
 //-----------------------------------------------------------------------------
 // Actually creates the D3D Device once the present parameters are set up
 //-----------------------------------------------------------------------------
@@ -1834,6 +2154,25 @@ IDirect3DDevice9* CShaderDeviceDx8::InvokeCreateDevice( void* hWnd, int nAdapter
 	nAdapter = D3D()->GetAdapterCount()-1;
 	devType = D3DDEVTYPE_REF;
 	deviceCreationFlags = D3DCREATE_FPU_PRESERVE | D3DCREATE_HARDWARE_VERTEXPROCESSING;
+#endif
+
+#if 1	// with the changes for opengl to enable threading, we no longer need the d3d device to have threading guards
+#ifndef _X360
+	// Create the device with multi-threaded safeguards if we're using mat_queue_mode 2.
+	// The logic to enable multithreaded rendering happens well after the device has been created, 
+	// so we replicate some of that logic here.
+	ConVarRef mat_queue_mode( "mat_queue_mode" );
+	if ( mat_queue_mode.GetInt() == 2 ||
+		 ( mat_queue_mode.GetInt() == -2 && GetCPUInformation()->m_nPhysicalProcessors >= 2 ) ||
+	     ( mat_queue_mode.GetInt() == -1 && GetCPUInformation()->m_nPhysicalProcessors >= 2 ) )
+	{
+		deviceCreationFlags |= D3DCREATE_MULTITHREADED;
+	}
+#endif
+#endif
+
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+	devType =  CommandLine()->FindParm( "-nulldevice" ) ? D3DDEVTYPE_NULLREF: devType;
 #endif
 
 	HRESULT hr = D3D()->CreateDevice( nAdapter, devType,
@@ -1864,9 +2203,31 @@ IDirect3DDevice9* CShaderDeviceDx8::InvokeCreateDevice( void* hWnd, int nAdapter
 	if ( !FAILED( hr ) && pD3DDevice )
 		return pD3DDevice;
 
+	const char *pszMoreInfo = NULL;
+	switch ( hr )
+	{
+#ifdef _WIN32
+	case D3DERR_INVALIDCALL:
+		// Override the error text for this error since it has a known meaning for CreateDevice failures.
+		pszMoreInfo = "D3DERR_INVALIDCALL: The device or the device driver may not support Direct3D or may not support the resolution or color depth specified.";
+		break;
+#endif // _WIN32
+	default:
+		pszMoreInfo = GetD3DErrorText( hr );
+		break;
+	}
+
 	// Otherwise we failed, show a message and shutdown
-	DWarning( "init", 0, "Failed to create D3D device! Please see the following for more info.\n"
-		"http://support.steampowered.com/cgi-bin/steampowered.cfg/php/enduser/std_adp.php?p_faqid=772\n" );
+	if ( pszMoreInfo )
+	{
+		DWarning( "init", 0, "Failed to create %s device!\nError 0x%lX: %s\n\nPlease see the following for more info.\n"
+			"http://support.steampowered.com/cgi-bin/steampowered.cfg/php/enduser/std_adp.php?p_faqid=772\n", IsOpenGL() ? "OpenGL" : "D3D", hr, pszMoreInfo );
+	}
+	else
+	{
+		DWarning( "init", 0, "Failed to create %s device!\nError 0x%lX.\n\nPlease see the following for more info.\n"
+			"http://support.steampowered.com/cgi-bin/steampowered.cfg/php/enduser/std_adp.php?p_faqid=772\n", IsOpenGL() ? "OpenGL" : "D3D", hr );
+	}
 
 	return NULL;
 }
@@ -2005,10 +2366,12 @@ bool CShaderDeviceDx8::CreateD3DDevice( void* pHWnd, int nAdapter, const ShaderD
 	// What texture formats do we support?
 	if ( D3DSupportsCompressedTextures() )
 	{
+		g_pHardwareConfig->ActualCapsForEdit().m_SupportsCompressedTextures = COMPRESSED_TEXTURES_ON;
 		g_pHardwareConfig->CapsForEdit().m_SupportsCompressedTextures = COMPRESSED_TEXTURES_ON;
 	}
 	else
 	{
+		g_pHardwareConfig->ActualCapsForEdit().m_SupportsCompressedTextures = COMPRESSED_TEXTURES_OFF;
 		g_pHardwareConfig->CapsForEdit().m_SupportsCompressedTextures = COMPRESSED_TEXTURES_OFF;
 	}
 
@@ -2068,22 +2431,30 @@ void CShaderDeviceDx8::AllocFrameSyncObjects( void )
 
 	if ( m_DeviceSupportsCreateQuery == 0 )
 	{
-		m_pFrameSyncQueryObject = NULL;
+		for ( int i = 0; i < ARRAYSIZE(m_pFrameSyncQueryObject); i++ )
+		{
+			m_pFrameSyncQueryObject[i] = NULL;
+			m_bQueryIssued[i] = false;
+		}
 		return;
 	}
 
 	// FIXME FIXME FIXME!!!!!  Need to record this.
-	HRESULT hr = Dx9Device()->CreateQuery( D3DQUERYTYPE_EVENT, &m_pFrameSyncQueryObject );
-	if( hr == D3DERR_NOTAVAILABLE )
+	for ( int i = 0; i < ARRAYSIZE(m_pFrameSyncQueryObject); i++ )
 	{
-		Warning( "D3DQUERYTYPE_EVENT not available on this driver\n" );
-		Assert( m_pFrameSyncQueryObject == NULL );
-	}
-	else
-	{
-		Assert( hr == D3D_OK );
-		Assert( m_pFrameSyncQueryObject );
-		m_pFrameSyncQueryObject->Issue( D3DISSUE_END );
+		HRESULT hr = Dx9Device()->CreateQuery( D3DQUERYTYPE_EVENT, &m_pFrameSyncQueryObject[i] );
+		if( hr == D3DERR_NOTAVAILABLE )
+		{
+			Warning( "D3DQUERYTYPE_EVENT not available on this driver\n" );
+			Assert( m_pFrameSyncQueryObject[i] == NULL );
+		}
+		else
+		{
+			Assert( hr == D3D_OK );
+			Assert( m_pFrameSyncQueryObject[i] );
+			m_pFrameSyncQueryObject[i]->Issue( D3DISSUE_END );
+			m_bQueryIssued[i] = true;
+		}
 	}
 }
 
@@ -2100,14 +2471,38 @@ void CShaderDeviceDx8::FreeFrameSyncObjects( void )
 	FreeFrameSyncTextureObject();
 
 	// FIXME FIXME FIXME!!!!!  Need to record this.
-	if ( m_pFrameSyncQueryObject )
+	for ( int i = 0; i < ARRAYSIZE(m_pFrameSyncQueryObject); i++ )
 	{
-#ifdef _DEBUG
-		int nRetVal = 
+		if ( m_pFrameSyncQueryObject[i] )
+		{
+			if ( m_bQueryIssued[i] )
+			{
+				tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "D3DQueryGetData %t", tmSendCallStack( TELEMETRY_LEVEL0, 0 ) );
+
+				double flStartTime = Plat_FloatTime();
+				BOOL dummyData = 0;
+				HRESULT hr = S_OK;
+
+				// Make every attempt (within 2 seconds) to get the result from the query.  Doing so may prevent
+				// crashes in the driver if we try to release outstanding queries.
+				do
+				{
+					hr = m_pFrameSyncQueryObject[i]->GetData( &dummyData, sizeof( dummyData ), D3DGETDATA_FLUSH );
+					double flCurrTime = Plat_FloatTime();
+
+					// don't wait more than 2 seconds for these
+					if ( flCurrTime - flStartTime > 2.00 )
+						break;
+				} while ( hr == S_FALSE );
+			}
+#ifdef DBGFLAG_ASSERT
+			int nRetVal = 
 #endif
-			m_pFrameSyncQueryObject->Release();
-		Assert( nRetVal == 0 );
-		m_pFrameSyncQueryObject = NULL;
+			m_pFrameSyncQueryObject[i]->Release();
+			Assert( nRetVal == 0 );
+			m_pFrameSyncQueryObject[i] = NULL;
+			m_bQueryIssued[i] = false;
+		}
 	}
 }
 
@@ -2117,6 +2512,18 @@ void CShaderDeviceDx8::FreeFrameSyncObjects( void )
 //-----------------------------------------------------------------------------
 void CShaderDeviceDx8::OtherAppInitializing( bool initializing )
 {
+	if ( !ThreadOwnsDevice() || !ThreadInMainThread() )
+	{
+		if ( initializing )
+		{
+			ShaderUtil()->OnThreadEvent( SHADER_THREAD_OTHER_APP_START );
+		}
+		else
+		{
+			ShaderUtil()->OnThreadEvent( SHADER_THREAD_OTHER_APP_END );
+		}
+		return;
+	}
 	Assert( m_bOtherAppInitializing != initializing );
 
 	if ( !IsDeactivated() )
@@ -2135,6 +2542,33 @@ void CShaderDeviceDx8::OtherAppInitializing( bool initializing )
 }
 
 
+void CShaderDeviceDx8::HandleThreadEvent( uint32 threadEvent )
+{
+	Assert(ThreadOwnsDevice());
+	switch ( threadEvent )
+	{
+	case SHADER_THREAD_OTHER_APP_START:
+		OtherAppInitializing(true);
+		break;
+	case SHADER_THREAD_RELEASE_RESOURCES:
+		ReleaseResources();
+		break;
+	case SHADER_THREAD_EVICT_RESOURCES:
+		EvictManagedResourcesInternal();
+		break;
+	case SHADER_THREAD_RESET_RENDER_STATE:
+		ResetRenderState();
+		break;
+	case SHADER_THREAD_ACQUIRE_RESOURCES:
+		ReacquireResources();
+		break;
+	case SHADER_THREAD_OTHER_APP_END:
+		OtherAppInitializing(false);
+		break;
+
+	}
+}
+
 //-----------------------------------------------------------------------------
 // We lost the device, but we have a chance to recover
 //-----------------------------------------------------------------------------
@@ -2143,10 +2577,31 @@ bool CShaderDeviceDx8::TryDeviceReset()
 	if ( IsX360() )
 		return true;
 
+	// Don't try to reset the device until we're sure our resources have been released
+	if ( !m_bResourcesReleased )
+	{
+		return false;
+	}
+
 	// FIXME: Make this rebuild the Dx9Device from scratch!
 	// Helps with compatibility
 	HRESULT hr = Dx9Device()->Reset( &m_PresentParameters );
-	return !FAILED(hr);
+	bool bResetSuccess = !FAILED(hr);
+
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9)
+	if ( bResetSuccess && g_ShaderDeviceUsingD3D9Ex )
+	{
+		bResetSuccess = SUCCEEDED( Dx9Device()->TestCooperativeLevel() );
+		if ( bResetSuccess )
+		{
+			Warning("video driver has crashed and been reset, re-uploading resources now");
+		}
+	}
+#endif
+
+	if ( bResetSuccess )
+		m_bResourcesReleased = false;
+	return bResetSuccess;
 }
 
 
@@ -2155,6 +2610,15 @@ bool CShaderDeviceDx8::TryDeviceReset()
 //-----------------------------------------------------------------------------
 void CShaderDeviceDx8::ReleaseResources()
 {
+	if ( !ThreadOwnsDevice() || !ThreadInMainThread() )
+	{
+		// Set our resources as not being released yet.  
+		// We reset this in two places since release resources can be called without a call to TryDeviceReset.
+		m_bResourcesReleased = false;
+		ShaderUtil()->OnThreadEvent( SHADER_THREAD_RELEASE_RESOURCES );
+		return;
+	}
+
 	// Only the initial "ReleaseResources" actually has effect
 	if ( m_numReleaseResourcesRefCount ++ != 0 )
 	{
@@ -2184,6 +2648,9 @@ void CShaderDeviceDx8::ReleaseResources()
 
 	// All meshes cleaned up?
 	Assert( MeshMgr()->BufferCount() == 0 );
+
+	// Signal that our resources have been released so that we can try to reset the device
+	m_bResourcesReleased = true;
 }
 
 
@@ -2194,6 +2661,15 @@ void CShaderDeviceDx8::ReacquireResources()
 
 void CShaderDeviceDx8::ReacquireResourcesInternal( bool bResetState, bool bForceReacquire, char const *pszForceReason )
 {
+	if ( !ThreadOwnsDevice() || !ThreadInMainThread() )
+	{
+		if ( bResetState )
+		{
+			ShaderUtil()->OnThreadEvent( SHADER_THREAD_RESET_RENDER_STATE );
+		}
+		ShaderUtil()->OnThreadEvent( SHADER_THREAD_ACQUIRE_RESOURCES );
+		return;
+	}
 	if ( bForceReacquire )
 	{
 		// If we are forcing reacquire then warn if release calls are remaining unpaired
@@ -2261,7 +2737,7 @@ bool CShaderDeviceDx8::ResizeWindow( const ShaderDeviceInfo_t &info )
 	HRESULT hr = Dx9Device()->Reset( &m_PresentParameters );
 	if ( FAILED( hr ) )
 	{
-		Warning( "ResizeWindow: Reset failed, hr = 0x%08X.\n", hr );
+		Warning( "ResizeWindow: Reset failed, hr = 0x%08lX.\n", hr );
 		return false;
 	}
 	else
@@ -2302,9 +2778,6 @@ void CShaderDeviceDx8::CheckDeviceLost( bool bOtherAppInitializing )
 	m_bIsMinimized = ( IsIconic( (HWND)m_hWnd ) == TRUE );
 	m_bOtherAppInitializing = bOtherAppInitializing;
 
-	RECORD_COMMAND( DX8_TEST_COOPERATIVE_LEVEL, 0 );
-	HRESULT hr = Dx9Device()->TestCooperativeLevel();
-
 #ifdef _DEBUG
 	if ( mat_forcelostdevice.GetBool() )
 	{
@@ -2312,6 +2785,21 @@ void CShaderDeviceDx8::CheckDeviceLost( bool bOtherAppInitializing )
 		MarkDeviceLost();
 	}
 #endif
+	
+	HRESULT hr = D3D_OK;
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9)
+	if ( g_ShaderDeviceUsingD3D9Ex && m_DeviceState == DEVICE_STATE_OK )
+	{
+		// Steady state - PresentEx return value will mark us lost if necessary.
+		// We do not care if we are minimized in this state.
+		m_bIsMinimized = false; 
+	}
+	else
+#endif
+	{
+		RECORD_COMMAND( DX8_TEST_COOPERATIVE_LEVEL, 0 );
+		hr = Dx9Device()->TestCooperativeLevel();
+	}
 
 	// If some other call returned device lost previously in the frame, spoof the return value from TCL
 	if ( m_bQueuedDeviceLost )
@@ -2326,12 +2814,18 @@ void CShaderDeviceDx8::CheckDeviceLost( bool bOtherAppInitializing )
 		// or if we become minimized, or if TCL returns anything other than D3D_OK.
 		if ( ( hr != D3D_OK ) || m_bIsMinimized )
 		{
+			// purge unreferenced materials
+			g_pShaderUtil->UncacheUnusedMaterials( true );
+
 			// We were ok, now we're not. Release resources
 			ReleaseResources();
 			m_DeviceState = DEVICE_STATE_LOST_DEVICE; 
 		}
 		else if ( bOtherAppInitializing )
 		{
+			// purge unreferenced materials
+			g_pShaderUtil->UncacheUnusedMaterials( true );
+
 			// We were ok, now we're not. Release resources
 			ReleaseResources();
 			m_DeviceState = DEVICE_STATE_OTHER_APP_INIT; 
@@ -2397,6 +2891,9 @@ void CShaderDeviceDx8::CheckDeviceLost( bool bOtherAppInitializing )
 #ifdef _DEBUG
 		Warning( "mode change!\n" );
 #endif
+		// now purge unreferenced materials
+		g_pShaderUtil->UncacheUnusedMaterials( true );
+
 		ResizeWindow( m_PendingVideoModeChangeConfig );
 	}
 #endif
@@ -2408,8 +2905,7 @@ void CShaderDeviceDx8::CheckDeviceLost( bool bOtherAppInitializing )
 //-----------------------------------------------------------------------------
 bool CShaderDeviceDx8::AllocNonInteractiveRefreshObjects()
 {
-	if ( !IsX360() )
-		return true;
+#if defined( _X360 )
 
 	const char *strVertexShaderProgram = 
 		" float4x4 matWVP : register(c0);"  
@@ -2569,6 +3065,9 @@ bool CShaderDeviceDx8::AllocNonInteractiveRefreshObjects()
 
 	// Create a vertex declaration from the element descriptions.
 	Dx9Device()->CreateVertexDeclaration( VertexElements, &m_NonInteractiveRefresh.m_pVertexDecl );
+	
+#endif	
+	
 	return true;
 }
 
@@ -2686,7 +3185,7 @@ void CShaderDeviceDx8::RefreshFrontBufferNonInteractive()
 		return;
 
 	// Other code should not be talking to D3D at the same time as this
-	AUTO_LOCK_FM( m_nonInteractiveModeMutex );
+	AUTO_LOCK( m_nonInteractiveModeMutex );
 
 #ifdef _X360
 	g_pShaderAPI->OwnGPUResources( false );
@@ -2749,6 +3248,9 @@ void CShaderDeviceDx8::RefreshFrontBufferNonInteractive()
 	Dx9Device()->SetSamplerState( 0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP );
 	Dx9Device()->SetSamplerState( 0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR );
 	Dx9Device()->SetSamplerState( 0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR );
+
+	tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "%s", __FUNCTION__ );
+
 	Dx9Device()->DrawPrimitiveUP( D3DPT_QUADLIST, 1, Vertices, sizeof( TEXVERTEX ) );
 
 	if ( bInStartupMode )
@@ -2795,6 +3297,8 @@ void CShaderDeviceDx8::RefreshFrontBufferNonInteractive()
 	Dx9Device()->SetTexture( 0, NULL );
 	Dx9Device()->SetVertexDeclaration( NULL );
 
+	tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "D3DPresent" );
+
 	Dx9Device()->Present( 0, 0, 0, 0 );
 	g_pShaderAPI->QueueResetRenderState();
 	g_pShaderAPI->OwnGPUResources( true );
@@ -2821,6 +3325,23 @@ void CShaderDeviceDx8::Present()
 
 	HRESULT hr = S_OK;
 
+	// if we're in queued mode, don't present if the device is already lost
+	bool bValidPresent = true;
+	bool bInMainThread = ThreadInMainThread();
+	if ( !bInMainThread )
+	{
+		// don't present if the device is in an invalid state and in queued mode
+		if ( m_DeviceState != DEVICE_STATE_OK )
+		{
+			bValidPresent = false;
+		}
+		// check for lost device early in threaded mode
+		CheckDeviceLost( m_bOtherAppInitializing );
+		if ( m_DeviceState != DEVICE_STATE_OK )
+		{
+			bValidPresent = false;
+		}
+	}
 	// Copy the back buffer into the non-interactive temp buffer
 	if ( m_NonInteractiveRefresh.m_Mode == MATERIAL_NON_INTERACTIVE_MODE_LEVEL_LOAD )
 	{
@@ -2828,7 +3349,11 @@ void CShaderDeviceDx8::Present()
 	}
 
 	// If we're not iconified, try to present (without this check, we can flicker when Alt-Tabbed away)
-	if ( IsX360() || IsIconic( (HWND)m_hWnd ) == 0 )
+#ifdef _WIN32
+	if ( IsX360() || (IsIconic( ( HWND )m_hWnd ) == 0 && bValidPresent) )
+#else
+	if ( IsX360() || (IsIconic( (VD3DHWND)m_hWnd ) == 0 && bValidPresent) )
+#endif
 	{
 		if ( IsPC() && ( m_IsResizing || ( m_ViewHWnd != (HWND)m_hWnd ) ) )
 		{
@@ -2882,7 +3407,10 @@ void CShaderDeviceDx8::Present()
 
 	MeshMgr()->DiscardVertexBuffers();
 
-	CheckDeviceLost( m_bOtherAppInitializing );
+	if ( bInMainThread )
+	{
+		CheckDeviceLost( m_bOtherAppInitializing );
+	}
 
 	if ( IsX360() )
 	{
@@ -2907,11 +3435,12 @@ void CShaderDeviceDx8::Present()
 
 	if ( !IsDeactivated() )
 	{
-		if (ShaderUtil()->GetConfig().bMeasureFillRate || 
-			ShaderUtil()->GetConfig().bVisualizeFillRate )
+#ifndef DX_TO_GL_ABSTRACTION
+		if ( ( ShaderUtil()->GetConfig().bMeasureFillRate || ShaderUtil()->GetConfig().bVisualizeFillRate ) )
 		{
 			g_pShaderAPI->ClearBuffers( true, true, true, -1, -1 );
 		}
+#endif
 
 		Dx9Device()->BeginScene();
 	}
@@ -3021,6 +3550,13 @@ void CShaderDeviceDx8::DestroyPixelShader( PixelShaderHandle_t hShader )
 {
 	ShaderManager()->DestroyPixelShader( hShader );
 }
+
+#ifdef DX_TO_GL_ABSTRACTION
+void CShaderDeviceDx8::DoStartupShaderPreloading( void )
+{
+	ShaderManager()->DoStartupShaderPreloading();
+}
+#endif
 
 
 //-----------------------------------------------------------------------------

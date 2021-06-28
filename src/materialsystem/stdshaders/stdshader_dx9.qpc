@@ -67,6 +67,7 @@ files
 		"cloak_blended_pass_helper.cpp"
 		"cloak_dx9_helper.cpp"
 		"colorcorrection.cpp"
+		"compositor.cpp"
 		"core_dx9.cpp"
 		"debugmrttexture.cpp"
 		"debugmorphaccumulator_dx9.cpp" [$WINDOWS]

@@ -78,6 +78,8 @@ public:
 	void EnableBlending( bool bEnable );
 
 	void BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor );
+	void BlendOp( ShaderBlendOp_t blendOp );
+	void BlendOpSeparateAlpha( ShaderBlendOp_t blendOp );
 
 	// Alpha testing
 	void EnableAlphaTest( bool bEnable );
@@ -184,6 +186,9 @@ private:
 	// Computes the blend factor
 	D3DBLEND BlendFuncValue( ShaderBlendFactor_t factor ) const;
 
+	// Computes the blend op
+	D3DBLENDOP BlendOpValue( ShaderBlendOp_t blendOp ) const;
+
 	// Configures the FVF vertex shader
 	void ConfigureFVFVertexShader( unsigned int flags );
 	void ConfigureCustomFVFVertexShader( unsigned int flags );
@@ -241,10 +246,12 @@ private:
 	// Alpha blending...
 	D3DBLEND	m_SrcBlend;
 	D3DBLEND	m_DestBlend;
+	D3DBLENDOP	m_BlendOp;
 
 	// GR - Separate alpha blending...
 	D3DBLEND	m_SrcBlendAlpha;
 	D3DBLEND	m_DestBlendAlpha;
+	D3DBLENDOP	m_BlendOpAlpha;
 
 	// Alpha testing
 	D3DCMPFUNC	m_AlphaFunc;
@@ -365,7 +372,9 @@ void CShaderShadowDX8::Init( )
 		m_ShadowState.m_SamplerState[i].m_TextureEnable = false;
 		m_ShadowState.m_SamplerState[i].m_SRGBReadEnable = false;
 		m_ShadowState.m_SamplerState[i].m_Fetch4Enable = false;
-
+#ifdef DX_TO_GL_ABSTRACTION
+		m_ShadowState.m_SamplerState[i].m_ShadowFilterEnable = false;
+#endif
 		// A *real* measure if the texture stage is being used.
 		// we sometimes have to set the shadow state to not mirror this.
 		m_SamplerState[i].m_TextureEnable = false;
@@ -387,10 +396,12 @@ void CShaderShadowDX8::SetDefaultState()
 	EnableLighting( false );
 	EnableConstantColor( false );
 	EnableBlending( false );
-	BlendFunc( SHADER_BLEND_ZERO, SHADER_BLEND_ZERO );
+	BlendFunc( SHADER_BLEND_ONE, SHADER_BLEND_ZERO );
+	BlendOp( SHADER_BLEND_OP_ADD );
 	// GR - separate alpha
 	EnableBlendingSeparateAlpha( false );
-	BlendFuncSeparateAlpha( SHADER_BLEND_ZERO, SHADER_BLEND_ZERO );
+	BlendFuncSeparateAlpha( SHADER_BLEND_ONE, SHADER_BLEND_ZERO );
+	BlendOpSeparateAlpha( SHADER_BLEND_OP_ADD );
 	AlphaFunc( SHADER_ALPHAFUNC_GEQUAL, 0.7f );
 	PolyMode( SHADER_POLYMODEFACE_FRONT_AND_BACK, SHADER_POLYMODE_FILL );
 	EnableCulling( true );
@@ -643,6 +654,30 @@ D3DBLEND CShaderShadowDX8::BlendFuncValue( ShaderBlendFactor_t factor ) const
 	return D3DBLEND_ONE;
 }
 
+D3DBLENDOP CShaderShadowDX8::BlendOpValue( ShaderBlendOp_t blendOp ) const
+{
+	switch( blendOp )
+	{
+	case SHADER_BLEND_OP_ADD:
+		return D3DBLENDOP_ADD;
+
+	case SHADER_BLEND_OP_SUBTRACT:
+		return D3DBLENDOP_SUBTRACT;
+
+	case SHADER_BLEND_OP_REVSUBTRACT:
+		return D3DBLENDOP_REVSUBTRACT;
+
+	case SHADER_BLEND_OP_MIN:
+		return D3DBLENDOP_MIN;
+
+	case SHADER_BLEND_OP_MAX:
+		return D3DBLENDOP_MAX;
+	}
+
+	Warning( "BlendOp: invalid op\n" );
+	return D3DBLENDOP_ADD;
+}
+
 void CShaderShadowDX8::BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor )
 {
 	D3DBLEND d3dSrcFactor = BlendFuncValue( srcFactor );
@@ -658,6 +693,16 @@ void CShaderShadowDX8::BlendFuncSeparateAlpha( ShaderBlendFactor_t srcFactor, Sh
 	D3DBLEND d3dDstFactor = BlendFuncValue( dstFactor );
 	m_SrcBlendAlpha = d3dSrcFactor;
 	m_DestBlendAlpha = d3dDstFactor;
+}
+
+void CShaderShadowDX8::BlendOp( ShaderBlendOp_t blendOp )
+{
+	m_BlendOp = BlendOpValue( blendOp );
+}
+
+void CShaderShadowDX8::BlendOpSeparateAlpha( ShaderBlendOp_t blendOp )
+{
+	m_BlendOpAlpha = BlendOpValue( blendOp );
 }
 
 //-----------------------------------------------------------------------------
@@ -832,6 +877,13 @@ void CShaderShadowDX8::EnableSRGBRead( Sampler_t sampler, bool bEnable )
 
 void CShaderShadowDX8::SetShadowDepthFiltering( Sampler_t stage )
 {
+#ifdef DX_TO_GL_ABSTRACTION
+	if ( stage < m_pHardwareConfig->GetSamplerCount() )
+	{
+		m_ShadowState.m_SamplerState[stage].m_ShadowFilterEnable = true;
+		return;
+	}
+#else
 	if ( !m_pHardwareConfig->SupportsFetch4() )
 	{
 		m_ShadowState.m_SamplerState[stage].m_Fetch4Enable = false;
@@ -843,7 +895,8 @@ void CShaderShadowDX8::SetShadowDepthFiltering( Sampler_t stage )
 		m_ShadowState.m_SamplerState[stage].m_Fetch4Enable = true;
 		return;
 	}
-
+#endif
+	
 	Warning( "Attempting set shadow filtering state on an invalid sampler (%d)!\n", stage );
 }
 
@@ -1024,14 +1077,23 @@ void CShaderShadowDX8::SetMorphFormat( MorphFormat_t flags )
 //-----------------------------------------------------------------------------
 void CShaderShadowDX8::SetVertexShader( const char* pFileName, int nStaticVshIndex )
 {
-//	Assert( nStaticVshIndex == 0 );
-	m_ShadowShaderState.m_VertexShader = ShaderManager()->CreateVertexShader( pFileName, nStaticVshIndex );
+	char debugLabel[500] = "";
+#ifdef DX_TO_GL_ABSTRACTION
+	Q_snprintf( debugLabel, sizeof(debugLabel), "vs-file %s vs-index %d", pFileName, nStaticVshIndex ); 
+#endif
+
+	m_ShadowShaderState.m_VertexShader = ShaderManager()->CreateVertexShader( pFileName, nStaticVshIndex, debugLabel );
 	m_ShadowShaderState.m_nStaticVshIndex = nStaticVshIndex;
 }
 
 void CShaderShadowDX8::SetPixelShader( const char* pFileName, int nStaticPshIndex )
 {
-	m_ShadowShaderState.m_PixelShader = ShaderManager()->CreatePixelShader( pFileName, nStaticPshIndex );
+	char debugLabel[500] = "";
+#ifdef DX_TO_GL_ABSTRACTION
+	Q_snprintf( debugLabel, sizeof(debugLabel), "ps-file %s ps-index %d", pFileName, nStaticPshIndex ); 
+#endif
+
+	m_ShadowShaderState.m_PixelShader = ShaderManager()->CreatePixelShader( pFileName, nStaticPshIndex, debugLabel );
 	m_ShadowShaderState.m_nStaticPshIndex = nStaticPshIndex;
 }
 
@@ -1599,11 +1661,13 @@ void CShaderShadowDX8::ComputeAggregateShadowState( )
 	{
 		m_ShadowState.m_SrcBlend = m_SrcBlend;
 		m_ShadowState.m_DestBlend = m_DestBlend;
+		m_ShadowState.m_BlendOp = m_BlendOp;
 	}
 	else
 	{
 		m_ShadowState.m_SrcBlend = D3DBLEND_ONE;
 		m_ShadowState.m_DestBlend = D3DBLEND_ZERO;
+		m_ShadowState.m_BlendOp = D3DBLENDOP_ADD;
 	}
 
 	// GR
@@ -1611,11 +1675,13 @@ void CShaderShadowDX8::ComputeAggregateShadowState( )
 	{
 		m_ShadowState.m_SrcBlendAlpha = m_SrcBlendAlpha;
 		m_ShadowState.m_DestBlendAlpha = m_DestBlendAlpha;
+		m_ShadowState.m_BlendOpAlpha = m_BlendOpAlpha;
 	}
 	else
 	{
 		m_ShadowState.m_SrcBlendAlpha = D3DBLEND_ONE;
 		m_ShadowState.m_DestBlendAlpha = D3DBLEND_ZERO;
+		m_ShadowState.m_BlendOpAlpha = D3DBLENDOP_ADD;
 	}
 
 	// Use the same func if it's disabled
@@ -1746,9 +1812,9 @@ void CShaderShadowDX8::DisableFogGammaCorrection( bool bDisable )
 
 void CShaderShadowDX8::SetDiffuseMaterialSource( ShaderMaterialSource_t materialSource )
 {
-	COMPILE_TIME_ASSERT( D3DMCS_MATERIAL == SHADER_MATERIALSOURCE_MATERIAL );
-	COMPILE_TIME_ASSERT( D3DMCS_COLOR1 == SHADER_MATERIALSOURCE_COLOR1 );
-	COMPILE_TIME_ASSERT( D3DMCS_COLOR2 == SHADER_MATERIALSOURCE_COLOR2 );
+	COMPILE_TIME_ASSERT( ( int )D3DMCS_MATERIAL == ( int )SHADER_MATERIALSOURCE_MATERIAL );
+	COMPILE_TIME_ASSERT( ( int )D3DMCS_COLOR1 == ( int )SHADER_MATERIALSOURCE_COLOR1 );
+	COMPILE_TIME_ASSERT( ( int )D3DMCS_COLOR2 == ( int )SHADER_MATERIALSOURCE_COLOR2 );
 	Assert( materialSource == SHADER_MATERIALSOURCE_MATERIAL ||
 			materialSource == SHADER_MATERIALSOURCE_COLOR1 ||
 			materialSource == SHADER_MATERIALSOURCE_COLOR2 );

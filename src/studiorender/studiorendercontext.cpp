@@ -2507,13 +2507,33 @@ void CStudioRenderContext::AddDecal( StudioDecalHandle_t handle, studiohdr_t *pS
 	matrix3x4_t *pBoneToWorld, const Ray_t& ray, const Vector& decalUp, 
 	IMaterial* pDecalMaterial, float radius, int body, bool noPokethru, int maxLODToDecal )
 {
-	Assert(
-		( (int)pBoneToWorld >= (int)m_BoneToWorldMatrices[m_nCurrentStack].GetBase() ) &&
-		( (int)pBoneToWorld < (int)m_BoneToWorldMatrices[m_nCurrentStack].GetBase() + m_BoneToWorldMatrices[m_nCurrentStack].GetUsed() )
-	);
+	// This substition always has to be done in the main thread, so do it here.
+	pDecalMaterial = GetModelSpecificDecalMaterial(pDecalMaterial);
 
-	QUEUE_STUDIORENDER_CALL( AddDecal, CStudioRender, g_pStudioRenderImp, handle, 
-		m_RC, pBoneToWorld, pStudioHdr, ray, decalUp, pDecalMaterial, radius, 
-		body, noPokethru, maxLODToDecal );
+	CMatRenderContextPtr pRenderContext(g_pMaterialSystem);
+	Assert(pRenderContext->IsRenderData(pBoneToWorld));
+	QUEUE_STUDIORENDER_CALL_RC(AddDecal, CStudioRender, g_pStudioRenderImp, pRenderContext,
+		handle, m_RC, pBoneToWorld, pStudioHdr, ray, decalUp, pDecalMaterial, radius,
+		body, noPokethru, maxLODToDecal);
+}
+
+// Function to do replacement because we always need to do this from the main thread.
+IMaterial* GetModelSpecificDecalMaterial(IMaterial* pDecalMaterial)
+{
+	Assert(ThreadInMainThread());
+	// Since we're adding this to a studio model, check the decal to see if 
+	// there's an alternate form used for static props...
+	bool found;
+	IMaterialVar* pModelMaterialVar = pDecalMaterial->FindVar("$modelmaterial", &found, false);
+	if (found)
+	{
+		IMaterial* pModelMaterial = g_pMaterialSystem->FindMaterial(pModelMaterialVar->GetStringValue(), TEXTURE_GROUP_DECAL, false);
+		if (!IsErrorMaterial(pModelMaterial))
+		{
+			return pModelMaterial;
+		}
+	}
+
+	return pDecalMaterial;
 }
 

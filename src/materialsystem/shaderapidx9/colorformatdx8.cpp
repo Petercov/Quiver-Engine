@@ -231,6 +231,7 @@ D3DFORMAT GetNearestD3DColorFormat( ImageFormat fmt,
 
 	case IMAGE_FORMAT_DXT1:
 	case IMAGE_FORMAT_DXT1_ONEBITALPHA:
+	case IMAGE_FORMAT_DXT1_RUNTIME:
 		if (TestTextureFormat(D3DFMT_DXT1, isRenderTarget, bIsVertexTexture, bIsFilterableRequired))
 			return D3DFMT_DXT1;
 		break;
@@ -241,6 +242,7 @@ D3DFORMAT GetNearestD3DColorFormat( ImageFormat fmt,
 		break;
 
 	case IMAGE_FORMAT_DXT5:
+	case IMAGE_FORMAT_DXT5_RUNTIME:
 		if (TestTextureFormat(D3DFMT_DXT5, isRenderTarget, bIsVertexTexture, bIsFilterableRequired ))
 			return D3DFMT_DXT5;
 		break;

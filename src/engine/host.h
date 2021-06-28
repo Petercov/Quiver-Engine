@@ -110,7 +110,7 @@ void Host_UpdateMapList( void );
 float Host_GetSoundDuration( const char *pSample );
 bool Host_IsSinglePlayerGame( void );
 int Host_GetServerCount( void );
-void Host_AllowQueuedMaterialSystem( bool bAllow );
+bool Host_AllowQueuedMaterialSystem( bool bAllow );
 
 // Force the voice stuff to send a packet out.
 // bFinal is true when the user is done talking.

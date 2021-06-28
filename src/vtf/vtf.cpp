@@ -285,6 +285,9 @@ CVTFTexture::CVTFTexture()
 
 	memset( &m_Options, 0, sizeof( m_Options ) );
 	m_Options.cbSize = sizeof( m_Options );
+
+	m_nFinestMipmapLevel = 0;
+	m_nCoarsestMipmapLevel = 0;
 }
 
 CVTFTexture::~CVTFTexture()
@@ -313,30 +316,45 @@ int CVTFTexture::ComputeMipCount() const
 // Allocate data blocks with an eye toward re-using memory
 //-----------------------------------------------------------------------------
 
-static void GenericAllocateReusableData( unsigned char **ppData, int *pNumAllocated, int numRequested )
+static bool GenericAllocateReusableData(unsigned char** ppData, int* pNumAllocated, int numRequested)
 {
-	if ( *pNumAllocated < numRequested )
+	// If we're asking for memory and we have way more than we expect, free some.
+	if (*pNumAllocated < numRequested || (numRequested > 0 && *pNumAllocated > 16 * numRequested))
 	{
-		delete [] *ppData;
-		*ppData = new unsigned char[ numRequested ];
-		*pNumAllocated = numRequested;
+		delete[] * ppData;
+		*ppData = new unsigned char[numRequested];
+		if (*ppData)
+		{
+			*pNumAllocated = numRequested;
+			return true;
+		}
+
+		*pNumAllocated = 0;
+		return false;
 	}
+
+	return true;
 }
 
-void CVTFTexture::AllocateImageData( int nMemorySize )
+bool CVTFTexture::AllocateImageData(int nMemorySize)
 {
-	GenericAllocateReusableData( &m_pImageData, &m_nImageAllocSize, nMemorySize );
+	return GenericAllocateReusableData(&m_pImageData, &m_nImageAllocSize, nMemorySize);
 }
 
-void CVTFTexture::ResourceMemorySection::AllocateData( int nMemorySize )
+bool CVTFTexture::ResourceMemorySection::AllocateData(int nMemorySize)
 {
-	GenericAllocateReusableData( &m_pData, &m_nDataAllocSize, nMemorySize );
-	m_nDataLength = nMemorySize;
+	if (GenericAllocateReusableData(&m_pData, &m_nDataAllocSize, nMemorySize))
+	{
+		m_nDataLength = nMemorySize;
+		return true;
+	}
+
+	return false;
 }
 
-void CVTFTexture::AllocateLowResImageData( int nMemorySize )
+bool CVTFTexture::AllocateLowResImageData(int nMemorySize)
 {
-	GenericAllocateReusableData( &m_pLowResImageData, &m_nLowResImageAllocSize, nMemorySize );
+	return GenericAllocateReusableData(&m_pLowResImageData, &m_nLowResImageAllocSize, nMemorySize);
 }
 
 inline bool IsMultipleOf4( int value )
@@ -649,7 +667,44 @@ bool CVTFTexture::LoadImageData( CUtlBuffer &buf, const VTFFileHeader_t &header,
 			nFacesToRead = 6;
 	}
 
-	AllocateImageData( iImageSize );
+	// Even if we are preloading partial data, always do the full allocation here. We'll use LOD clamping to ensure we only 
+	// reference data that is available.
+	if (!AllocateImageData(iImageSize))
+		return false;
+
+	// We may only have part of the data available--if so we will stream in the rest later. 
+	// If we have the data available but we're ignoring it (for example during development), then we 
+	// need to skip over the data we're ignoring below, otherwise we'll be sad pandas.
+	bool bMipDataPresent = true;
+	int nFirstAvailableMip = 0;
+	int nLastAvailableMip = m_nMipCount - 1;
+	TextureStreamSettings_t const* pStreamSettings = (TextureStreamSettings_t const*)GetResourceData(VTF_RSRC_TEXTURE_STREAM_SETTINGS, NULL);
+	if (pStreamSettings)
+	{
+		nFirstAvailableMip = Max(0, pStreamSettings->m_firstAvailableMip - nSkipMipLevels);
+		nLastAvailableMip = Max(0, pStreamSettings->m_lastAvailableMip - nSkipMipLevels);
+		bMipDataPresent = false;
+	}
+
+	// If we have coarse mips but not the fine mips (yet)
+	if ((header.flags & TEXTUREFLAGS_STREAMABLE) == TEXTUREFLAGS_STREAMABLE_COARSE)
+	{
+		nFirstAvailableMip = Max(0, Max(nFirstAvailableMip, STREAMING_START_MIPMAP) - nSkipMipLevels);
+	}
+
+	if (header.flags & TEXTUREFLAGS_STREAMABLE_FINE)
+	{
+		// Don't need to subtract nSkipMipLevels: m_nMipCount has subtracted that above--assuming this assert doesn't fire.
+		Assert(m_nMipCount == header.numMipLevels - nSkipMipLevels);
+		nLastAvailableMip = Min(nLastAvailableMip, STREAMING_START_MIPMAP - 1);
+	}
+
+	// Valid settings? 
+	Assert(nFirstAvailableMip >= 0 && nFirstAvailableMip <= nLastAvailableMip && nLastAvailableMip < m_nMipCount);
+
+	// Store the clamp settings
+	m_nFinestMipmapLevel = nFirstAvailableMip;
+	m_nCoarsestMipmapLevel = nLastAvailableMip;
 
 	// NOTE: The mip levels are stored ascending from smallest (1x1) to largest (NxN)
 	// in order to allow for truncated reads of the minimal required data
@@ -659,14 +714,28 @@ bool CVTFTexture::LoadImageData( CUtlBuffer &buf, const VTFFileHeader_t &header,
 		if (header.numMipLevels - nSkipMipLevels <= iMip)
 			continue;
 
-		int iMipSize = ComputeMipSize( iMip );
+		int iMipSize = ComputeMipSize(iMip);
+
+		// Skip over any levels we don't have data for--we'll get them later. 
+		if (iMip > nLastAvailableMip || iMip < nFirstAvailableMip)
+		{
+			// If the data is there but we're ignoring it, need to update the get pointer.
+			if (bMipDataPresent)
+			{
+				for (int iFrame = 0; iFrame < m_nFrameCount; ++iFrame)
+					for (int iFace = 0; iFace < nFacesToRead; ++iFace)
+						buf.SeekGet(CUtlBuffer::SEEK_CURRENT, iMipSize);
+			}
+			continue;
+		}
 
 		for (int iFrame = 0; iFrame < m_nFrameCount; ++iFrame)
 		{
 			for (int iFace = 0; iFace < nFacesToRead; ++iFace)
 			{
-				unsigned char *pMipBits = ImageData( iFrame, iFace, iMip );
-				buf.Get( pMipBits, iMipSize );
+				// printf("\n tex %p mip %i frame %i face %i  size %i  buf offset %i", this, iMip, iFrame, iFace, iMipSize, buf.TellGet() );
+				unsigned char* pMipBits = ImageData(iFrame, iFace, iMip);
+				buf.Get(pMipBits, iMipSize);
 			}
 		}
 	}
@@ -940,12 +1009,20 @@ bool CVTFTexture::ReadHeader( CUtlBuffer &buf, VTFFileHeader_t &header )
 //-----------------------------------------------------------------------------
 bool CVTFTexture::Unserialize( CUtlBuffer &buf, bool bHeaderOnly, int nSkipMipLevels )
 {
+	return UnserializeEx(buf, bHeaderOnly, 0, nSkipMipLevels);
+}
+
+bool CVTFTexture::UnserializeEx(CUtlBuffer & buf, bool bHeaderOnly, int nForceFlags, int nSkipMipLevels)
+{
 	// When unserializing, we can skip a certain number of mip levels,
 	// and we also can just load everything but the image data
 	VTFFileHeader_t header;
 
 	if ( !ReadHeader( buf, header ) )
 		return false;
+
+	// Pretend these flags are also set.
+	header.flags |= nForceFlags;
 
 	if ( (header.flags & TEXTUREFLAGS_ENVMAP) && (header.width != header.height) )
 	{
@@ -962,6 +1039,19 @@ bool CVTFTexture::Unserialize( CUtlBuffer &buf, bool bHeaderOnly, int nSkipMipLe
 		Warning( "*** Encountered VTF invalid texture size!\n" );
 		return false;
 	}
+	if ((header.imageFormat < IMAGE_FORMAT_UNKNOWN) || (header.imageFormat >= NUM_IMAGE_FORMATS))
+	{
+		Warning("*** Encountered VTF invalid image format!\n");
+		return false;
+	}
+
+	// If the header says we should be doing a texture allocation of more than 32M, just tell the caller we failed.
+	const int cMaxImageSizeLog2 = Q_log2(32 * 1024 * 1024);
+	if ((Q_log2(header.width) + Q_log2(header.height) + Q_log2(header.depth) + Q_log2(header.numFrames) > cMaxImageSizeLog2) || (header.numResources > MAX_RSRC_DICTIONARY_ENTRIES))
+	{
+		STAGING_ONLY_EXEC(DevWarning("Asked for a large texture to be created (%d h x %d w x %d d x %d f). Nope.\n", header.width, header.height, header.depth, header.numFrames));
+		return false;
+	}
 
 	m_nWidth = header.width;
 	m_nHeight = header.height;
@@ -975,6 +1065,9 @@ bool CVTFTexture::Unserialize( CUtlBuffer &buf, bool bHeaderOnly, int nSkipMipLe
 	// NOTE: We're going to store space for all mip levels, even if we don't 
 	// have data on disk for them. This is for backward compatibility
 	m_nMipCount = ComputeMipCount();
+
+	m_nFinestMipmapLevel = 0;
+	m_nCoarsestMipmapLevel = m_nMipCount - 1;
 
 	m_vecReflectivity = header.reflectivity;
 	m_flBumpScale = header.bumpScale;
@@ -997,6 +1090,10 @@ bool CVTFTexture::Unserialize( CUtlBuffer &buf, bool bHeaderOnly, int nSkipMipLe
 		m_nLowResImageHeight = header.lowResImageHeight;
 	}
 	m_LowResImageFormat = header.lowResImageFormat;
+
+	// invalid image format
+	if ((m_LowResImageFormat < IMAGE_FORMAT_UNKNOWN) || (m_LowResImageFormat >= NUM_IMAGE_FORMATS))
+		return false;
 
 	// Keep the allocated memory chunks of data
 	if ( int( header.numResources ) < m_arrResourcesData.Count() )
@@ -1090,6 +1187,15 @@ bool CVTFTexture::Unserialize( CUtlBuffer &buf, bool bHeaderOnly, int nSkipMipLe
 	}
 
 	return true;
+}
+
+void CVTFTexture::GetMipmapRange(int* pOutFinest, int* pOutCoarsest)
+{
+	if (pOutFinest)
+		*pOutFinest = m_nFinestMipmapLevel;
+
+	if (pOutCoarsest)
+		*pOutCoarsest = m_nCoarsestMipmapLevel;
 }
 
 bool CVTFTexture::LoadNewResources( CUtlBuffer &buf )

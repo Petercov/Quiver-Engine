@@ -88,7 +88,7 @@ BEGIN_VS_SHADER_FLAGS( TreeLeaf, "Help for TreeLeaf", SHADER_NOT_EDITABLE )
 
 			DECLARE_DYNAMIC_VERTEX_SHADER( treeleaf_vs20 );
 			SET_DYNAMIC_VERTEX_SHADER_COMBO( DYNAMIC_LIGHT, lightState.HasDynamicLight() );
-			SET_DYNAMIC_VERTEX_SHADER_COMBO( STATIC_LIGHT,  lightState.m_bStaticLight  ? 1 : 0 );
+			SET_DYNAMIC_VERTEX_SHADER_COMBO( STATIC_LIGHT,  lightState.m_bStaticLightVertex ? 1 : 0 );
 			SET_DYNAMIC_VERTEX_SHADER( treeleaf_vs20 );
 		}
 		Draw( );

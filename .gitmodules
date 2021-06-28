@@ -7,3 +7,6 @@
 [submodule "src/devtools/qpc"]
 	path = src/devtools/qpc
 	url = https://github.com/quiverteam/QuiverProjectCreator.git
+[submodule "game/sourcebase"]
+	path = game/sourcebase
+	url = https://github.com/Petercov/Quiver-SourceBase

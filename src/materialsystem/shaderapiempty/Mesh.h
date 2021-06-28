@@ -228,6 +228,8 @@ public:
 		return this;
 	}
 
+    virtual unsigned ComputeMemoryUsed() { return VERTEX_BUFFER_SIZE; }
+
 private:
 	enum
 	{

@@ -1121,6 +1121,12 @@ void R_BuildCubemapSamples( int numIterations )
 #if !defined( SWDS ) && !defined( _X360 )
 CON_COMMAND( buildcubemaps, "Rebuild cubemaps." )
 {
+	extern void V_RenderVGuiOnly();
+
+	bool bAllow = Host_AllowQueuedMaterialSystem(false);
+
+	// do this to force a frame to render so the material system syncs up to single thread mode
+	V_RenderVGuiOnly();
 	if ( args.ArgC() == 1 )
 	{
 		R_BuildCubemapSamples( 1 );
@@ -1133,6 +1139,7 @@ CON_COMMAND( buildcubemaps, "Rebuild cubemaps." )
 	{
 		ConMsg( "Usage: buildcubemaps [numBounces]\n" );
 	}
+	Host_AllowQueuedMaterialSystem(bAllow);
 }
 #endif // SWDS
 

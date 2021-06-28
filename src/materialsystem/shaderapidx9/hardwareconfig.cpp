@@ -25,6 +25,133 @@ CHardwareConfig *g_pHardwareConfig = &s_HardwareConfig;
 EXPOSE_SINGLE_INTERFACE_GLOBALVAR( CHardwareConfig, IMaterialSystemHardwareConfig, 
 	MATERIALSYSTEM_HARDWARECONFIG_INTERFACE_VERSION, s_HardwareConfig )
 
+template<typename T>
+static void ccs_create_convar_from_hwconfig( const T& val, const char *pName )
+{
+	int nValue = static_cast<int>( val );
+
+	ConVar *pConVar = g_pCVar->FindVar( pName );
+	if ( pConVar )
+	{
+		pConVar->SetValue( nValue );
+	}
+	else
+	{
+		// Don't care if this leaks - this is only used for development
+		pConVar = new ConVar( pName, "" );
+	}
+	if ( !nValue )
+		pConVar->SetValue( "0" );
+	else
+		pConVar->SetValue( nValue );
+}
+
+static void ccs_create_convar_from_hwconfig( const char *pVal, const char *pName )
+{
+	ConVar *pConVar = g_pCVar->FindVar( pName );
+	if ( pConVar )
+	{
+		pConVar->SetValue( pVal );
+	}
+	else
+	{
+		// Don't care if this leaks - this is only used for development
+		pConVar = new ConVar( pName, "" );
+	}
+	pConVar->SetValue( pVal );
+}
+
+CON_COMMAND_F( ccs_create_convars_from_hwconfig, "Create convars from the current hardware config, useful for diffing purposes", FCVAR_CHEAT )
+{
+	if ( !g_pHardwareConfig )
+		return;
+
+	const HardwareCaps_t &caps = g_pHardwareConfig->CapsForEdit();
+
+#define HWCFG( Name ) ccs_create_convar_from_hwconfig( caps.Name, #Name )
+	HWCFG( m_NumTextureStages );
+	HWCFG( m_nMaxAnisotropy );
+	HWCFG( m_MaxTextureWidth );
+	HWCFG( m_MaxTextureHeight );
+	HWCFG( m_MaxTextureDepth );
+	HWCFG( m_MaxTextureAspectRatio );
+	HWCFG( m_MaxPrimitiveCount );
+	HWCFG( m_NumPixelShaderConstants );
+	HWCFG( m_NumBooleanPixelShaderConstants );
+	HWCFG( m_NumIntegerPixelShaderConstants );
+	HWCFG( m_NumVertexShaderConstants );
+	HWCFG( m_NumBooleanVertexShaderConstants );
+	HWCFG( m_NumIntegerVertexShaderConstants );
+	HWCFG( m_TextureMemorySize );
+	HWCFG( m_MaxNumLights );
+	HWCFG( m_MaxBlendMatrices );
+	HWCFG( m_MaxBlendMatrixIndices );
+	HWCFG( m_MaxVertexShaderBlendMatrices );
+	HWCFG( m_MaxUserClipPlanes );
+	HWCFG( m_HDRType );
+	HWCFG( m_pShaderDLL );
+	HWCFG( m_ShadowDepthTextureFormat );
+	HWCFG( m_NullTextureFormat );
+	HWCFG( m_nVertexTextureCount );
+	HWCFG( m_nMaxVertexTextureDimension );
+	HWCFG( m_AlphaToCoverageState );					
+	HWCFG( m_AlphaToCoverageEnableValue );				
+	HWCFG( m_AlphaToCoverageDisableValue );			
+	HWCFG( m_nMaxViewports );
+	HWCFG( m_flMinGammaControlPoint );
+	HWCFG( m_flMaxGammaControlPoint );
+	HWCFG( m_nGammaControlPointCount );
+	HWCFG( m_MaxVertexShader30InstructionSlots );
+	HWCFG( m_MaxPixelShader30InstructionSlots );
+	HWCFG( m_MaxSimultaneousRenderTargets );
+	HWCFG( m_bDeviceOk );
+	HWCFG( m_HasSetDeviceGammaRamp );
+	HWCFG( m_SupportsVertexShaders );
+	HWCFG( m_SupportsVertexShaders_2_0 );
+	HWCFG( m_SupportsPixelShaders );
+	HWCFG( m_SupportsPixelShaders_1_4 );
+	HWCFG( m_SupportsPixelShaders_2_0 );
+	HWCFG( m_SupportsPixelShaders_2_b );
+	HWCFG( m_SupportsShaderModel_3_0 );
+	HWCFG( m_bSupportsAnisotropicFiltering );
+	HWCFG( m_bSupportsMagAnisotropicFiltering );
+	HWCFG( m_bSupportsVertexTextures );
+	HWCFG( m_ZBiasAndSlopeScaledDepthBiasSupported );
+	HWCFG( m_SupportsMipmapping );
+	HWCFG( m_SupportsOverbright );
+	HWCFG( m_SupportsCubeMaps );
+	HWCFG( m_SupportsHardwareLighting );
+	HWCFG( m_SupportsMipmappedCubemaps );
+	HWCFG( m_SupportsNonPow2Textures );
+	HWCFG( m_PreferDynamicTextures );
+	HWCFG( m_HasProjectedBumpEnv );
+	HWCFG( m_SupportsSRGB );
+	HWCFG( m_bSupportsSpheremapping );
+	HWCFG( m_UseFastClipping );
+	HWCFG( m_bNeedsATICentroidHack );
+	HWCFG( m_bDisableShaderOptimizations );
+	HWCFG( m_bColorOnSecondStream );
+	HWCFG( m_bSupportsStreamOffset );
+	HWCFG( m_bFogColorSpecifiedInLinearSpace );
+	HWCFG( m_bFogColorAlwaysLinearSpace );
+	HWCFG( m_bSupportsAlphaToCoverage );
+	HWCFG( m_bSupportsShadowDepthTextures );
+	HWCFG( m_bSupportsFetch4 );
+	HWCFG( m_bSoftwareVertexProcessing );
+	HWCFG( m_bScissorSupported );
+	HWCFG( m_bSupportsFloat32RenderTargets );
+	HWCFG( m_bSupportsBorderColor );
+	HWCFG( m_bDX10Card );							
+	HWCFG( m_bDX10Blending );						
+	HWCFG( m_bSupportsStaticControlFlow );			
+	HWCFG( m_FakeSRGBWrite );						
+	HWCFG( m_CanDoSRGBReadFromRTs );				
+	HWCFG( m_bSupportsGLMixedSizeTargets );			
+	HWCFG( m_bCanStretchRectFromTextures );
+
+	HWCFG( m_MaxHDRType );
+#undef HWCFG
+}
 
 CHardwareConfig::CHardwareConfig()
 {
@@ -36,6 +163,21 @@ CHardwareConfig::CHardwareConfig()
 	// FIXME: This is kind of a hack to deal with DX8 worldcraft startup.
 	// We can at least have this much texture 
 	m_Caps.m_MaxTextureWidth = m_Caps.m_MaxTextureHeight = m_Caps.m_MaxTextureDepth = 256;
+}
+
+
+//-----------------------------------------------------------------------------
+
+bool CHardwareConfig::GetHDREnabled( void ) const
+{
+//	printf("\n CHardwareConfig::GetHDREnabled returning m_bHDREnabled value of %s on %8x", m_bHDREnabled?"true":"false", this );
+	return m_bHDREnabled;
+}
+
+void CHardwareConfig::SetHDREnabled( bool bEnable )
+{
+//	printf("\n CHardwareConfig::SetHDREnabled setting m_bHDREnabled to value of %s on %8x", bEnable?"true":"false",  this );
+	m_bHDREnabled = bEnable;
 }
 
 
@@ -61,6 +203,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_SupportsPixelShaders_2_0 = false;
 		pCaps->m_SupportsPixelShaders_2_b = false;
 		pCaps->m_SupportsShaderModel_3_0 = false;
+		pCaps->m_bSupportsStaticControlFlow = false;
 		pCaps->m_SupportsCompressedTextures = COMPRESSED_TEXTURES_OFF;
 		pCaps->m_SupportsCompressedVertices = VERTEX_COMPRESSION_NONE;
 		pCaps->m_bSupportsAnisotropicFiltering = false;
@@ -96,6 +239,9 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_HasProjectedBumpEnv = false;
 		pCaps->m_MaxUserClipPlanes = 0;
 		pCaps->m_SupportsSRGB = false;
+		pCaps->m_FakeSRGBWrite = false;
+		pCaps->m_CanDoSRGBReadFromRTs = true;
+		pCaps->m_bSupportsGLMixedSizeTargets = false;
 		pCaps->m_HDRType = HDR_TYPE_NONE;
 		//		pCaps->m_bSupportsSpheremapping = true;
 		pCaps->m_UseFastClipping = true;
@@ -107,7 +253,6 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_bSupportsAlphaToCoverage = false;
 		pCaps->m_bSupportsShadowDepthTextures = false;
 		pCaps->m_bSupportsFetch4 = false;
-		pCaps->m_bSupportsNormalMapCompression = false;
 		pCaps->m_bSupportsBorderColor = false;
 		// m_bSoftwareVertexProcessing
 		pCaps->m_nVertexTextureCount = 0;
@@ -126,6 +271,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		// m_nGammaControlPointCount
 		pCaps->m_MaxVertexShader30InstructionSlots = 0;
 		pCaps->m_MaxPixelShader30InstructionSlots = 0;
+		pCaps->m_bCanStretchRectFromTextures = false;
 		break;
 
 	case 70:
@@ -139,6 +285,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_SupportsPixelShaders_2_0 = false;
 		pCaps->m_SupportsPixelShaders_2_b = false;
 		pCaps->m_SupportsShaderModel_3_0 = false;
+		pCaps->m_bSupportsStaticControlFlow = false;
 		//		pCaps->m_SupportsCompressedTextures = true;
 		pCaps->m_SupportsCompressedVertices = VERTEX_COMPRESSION_NONE;
 		pCaps->m_bSupportsAnisotropicFiltering = false;
@@ -174,6 +321,9 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_HasProjectedBumpEnv = false;
 		pCaps->m_MaxUserClipPlanes = 0;
 		pCaps->m_SupportsSRGB = false;
+		pCaps->m_FakeSRGBWrite = false;
+		pCaps->m_CanDoSRGBReadFromRTs = true;
+		pCaps->m_bSupportsGLMixedSizeTargets = false;
 		pCaps->m_HDRType = HDR_TYPE_NONE;
 		//		pCaps->m_bSupportsSpheremapping = true;
 		pCaps->m_UseFastClipping = true;
@@ -185,7 +335,6 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_bSupportsAlphaToCoverage = false;
 		pCaps->m_bSupportsShadowDepthTextures = false;
 		pCaps->m_bSupportsFetch4 = false;
-		pCaps->m_bSupportsNormalMapCompression = false;
 		pCaps->m_bSupportsBorderColor = false;
 		// m_bSoftwareVertexProcessing
 		pCaps->m_nVertexTextureCount = 0;
@@ -195,6 +344,8 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		// m_bScissorSupported
 		pCaps->m_bSupportsFloat32RenderTargets = false;
 		pCaps->m_bDX10Card = false;
+		pCaps->m_bDX10Blending = false;
+		pCaps->m_bCanStretchRectFromTextures = false;
 		break;
 
 	case 80:
@@ -210,6 +361,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_SupportsPixelShaders_2_0 = false;
 		pCaps->m_SupportsPixelShaders_2_b = false;
 		pCaps->m_SupportsShaderModel_3_0 = false;
+		pCaps->m_bSupportsStaticControlFlow = false;
 		//		pCaps->m_SupportsCompressedTextures = true;
 		pCaps->m_SupportsCompressedVertices = VERTEX_COMPRESSION_NONE;
 		//		pCaps->m_bSupportsAnisotropicFiltering = false;
@@ -242,7 +394,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		//		pCaps->m_PreferDynamicTextures = false;
 		//		pCaps->m_HasProjectedBumpEnv = false;
 		//		pCaps->m_MaxUserClipPlanes = 0;
-		pCaps->m_SupportsSRGB = false;
+		pCaps->m_bSupportsGLMixedSizeTargets = false;
 		pCaps->m_HDRType = HDR_TYPE_NONE;
 		//		pCaps->m_bSupportsSpheremapping = true;
 		//		pCaps->m_UseFastClipping = true;
@@ -262,8 +414,10 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_nMaxViewports = 1;
 		// m_bScissorSupported
 		pCaps->m_SupportsSRGB = false;
+		pCaps->m_FakeSRGBWrite = false;
+		pCaps->m_CanDoSRGBReadFromRTs = true;
+		pCaps->m_bSupportsGLMixedSizeTargets = false;
 		pCaps->m_bSupportsFetch4 = false;
-		pCaps->m_bSupportsNormalMapCompression = false;
 		pCaps->m_bSupportsBorderColor = false;
 		pCaps->m_bSupportsFloat32RenderTargets = false;
 		// ImageFormat m_ShadowDepthTextureFormat;
@@ -277,6 +431,8 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_MaxVertexShader30InstructionSlots = 0;
 		pCaps->m_MaxPixelShader30InstructionSlots = 0;
 		pCaps->m_bDX10Card = false;
+		pCaps->m_bDX10Blending = false;
+		pCaps->m_bCanStretchRectFromTextures = false;
 		break;
 
 	case 81:
@@ -292,6 +448,7 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_SupportsPixelShaders_2_0 = false;
 		pCaps->m_SupportsPixelShaders_2_b = false;
 		pCaps->m_SupportsShaderModel_3_0 = false;
+		pCaps->m_bSupportsStaticControlFlow = false;
 		//		pCaps->m_SupportsCompressedTextures = true;
 		pCaps->m_SupportsCompressedVertices = VERTEX_COMPRESSION_NONE;
 		//		pCaps->m_bSupportsAnisotropicFiltering = false;
@@ -325,6 +482,9 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		//		pCaps->m_HasProjectedBumpEnv = false;
 		//		pCaps->m_MaxUserClipPlanes = 0;
 		pCaps->m_SupportsSRGB = false;
+		pCaps->m_FakeSRGBWrite = false;
+		pCaps->m_CanDoSRGBReadFromRTs = true;
+		pCaps->m_bSupportsGLMixedSizeTargets = false;
 		pCaps->m_HDRType = HDR_TYPE_NONE;
 		//		pCaps->m_bSupportsSpheremapping = true;
 		//		pCaps->m_UseFastClipping = true;
@@ -336,7 +496,6 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_bSupportsAlphaToCoverage = false;
 		pCaps->m_bSupportsShadowDepthTextures = false;
 		pCaps->m_bSupportsFetch4 = false;
-		pCaps->m_bSupportsNormalMapCompression = false;
 		pCaps->m_bSupportsBorderColor = false;
 		// m_bSoftwareVertexProcessing
 		pCaps->m_nVertexTextureCount = 0;
@@ -356,6 +515,8 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_MaxVertexShader30InstructionSlots = 0;
 		pCaps->m_MaxPixelShader30InstructionSlots = 0;
 		pCaps->m_bDX10Card = false;
+		pCaps->m_bDX10Blending = false;
+		pCaps->m_bCanStretchRectFromTextures = false;
 		break;
 
 	case 90:
@@ -363,22 +524,98 @@ void CHardwareConfig::ForceCapsToDXLevel( HardwareCaps_t *pCaps, int nDxLevel, c
 		pCaps->m_nMaxVertexTextureDimension = 0;
 		pCaps->m_bSupportsVertexTextures = false;
 		pCaps->m_bSupportsStreamOffset = true;
-		pCaps->m_nDXSupportLevel = 90;
-		pCaps->m_bSupportsNormalMapCompression = false;
+		pCaps->m_bSupportsGLMixedSizeTargets = true;
+
+		if ( IsOpenGL() )
+		{
+			//FIXME this is way too complicated, we should just check the caps bit from GLM
+
+			pCaps->m_bSupportsStaticControlFlow = false;
+
+			if (1)	//(CommandLine()->FindParm("-glslmode"))
+			{
+				// rbarris 03Feb10: this is now hardwired because we are defaulting GLSL mode "on".
+				// so this will mean that the engine will always ask for user clip planes.
+				// this will misbehave under ARB mode, since ARB shaders won't respect that state.
+				// it's difficult to make this fluid without teaching the engine about a cap that could change during run.
+
+				pCaps->m_MaxUserClipPlanes = 2;
+				pCaps->m_UseFastClipping = false;
+			}
+			else
+			{
+				pCaps->m_MaxUserClipPlanes = 0;
+				pCaps->m_UseFastClipping = true;
+			}
+
+			pCaps->m_MaxNumLights = 2;
+		}
+		else
+		{
+			pCaps->m_bSupportsStaticControlFlow = true;
+			pCaps->m_MaxNumLights = pCaps->m_SupportsPixelShaders_2_b ? 4 : 2;	// 2b gets four lights, 2.0 gets two...
+		}
+
+		pCaps->m_bSupportsBorderColor = false;
+		pCaps->m_nMaxViewports = 1;
+		pCaps->m_NumPixelShaderConstants = 32;
+		pCaps->m_nMaxVertexTextureDimension = 0;
+		pCaps->m_MaxVertexShader30InstructionSlots = 0;
+		pCaps->m_MaxPixelShader30InstructionSlots  = 0;
+		pCaps->m_bCanStretchRectFromTextures = false;
+		break;
+
+	case 92:
+		pCaps->m_nVertexTextureCount = 0;
+		pCaps->m_nMaxVertexTextureDimension = 0;
+		pCaps->m_bSupportsVertexTextures = false;
 		pCaps->m_bSupportsBorderColor = false;
 
 		// 2b gets four lights, 2.0 gets two...
-		pCaps->m_MaxNumLights = pCaps->m_SupportsPixelShaders_2_b ? 4 : 2;
+		pCaps->m_SupportsShaderModel_3_0 = false;
+		if ( IsOpenGL() )
+		{
+			if ( IsOSX() )
+			{
+				pCaps->m_bSupportsStaticControlFlow = CommandLine()->CheckParm( "-glslcontrolflow" ) != NULL;
+			}
+			else
+			{
+				pCaps->m_bSupportsStaticControlFlow = !CommandLine()->CheckParm( "-noglslcontrolflow" );
+			}
+
+			pCaps->m_MaxUserClipPlanes = 2;
+			pCaps->m_UseFastClipping = false;
+			pCaps->m_MaxNumLights = pCaps->m_bSupportsStaticControlFlow ? MAX_NUM_LIGHTS : ( MAX_NUM_LIGHTS - 2 );
+		}
+		else
+		{
+			pCaps->m_MaxNumLights = MAX_NUM_LIGHTS;
+		}
+
 		pCaps->m_nMaxViewports = 1;
+		pCaps->m_NumPixelShaderConstants = 32;
+		pCaps->m_nMaxVertexTextureDimension = 0;
+		pCaps->m_bDX10Card = false;
+		pCaps->m_bDX10Blending = false;
+		pCaps->m_MaxVertexShader30InstructionSlots = 0;
+		pCaps->m_MaxPixelShader30InstructionSlots  = 0;
+		pCaps->m_bCanStretchRectFromTextures = false;
 		break;
 
 	case 95:
 		pCaps->m_nDXSupportLevel = 95;
 		pCaps->m_bSupportsStreamOffset = true;
-		pCaps->m_MaxNumLights = 4;
+		pCaps->m_bSupportsStaticControlFlow = true;
+		pCaps->m_bDX10Card = false;
+		pCaps->m_bDX10Blending = false;
+		pCaps->m_MaxNumLights = MAX_NUM_LIGHTS;
 		pCaps->m_nMaxViewports = 1;
-//		pCaps->m_bSupportsNormalMapCompression = false;
 		pCaps->m_bSupportsBorderColor = false;
+		pCaps->m_bCanStretchRectFromTextures = false;
+		break;
+
+	case 100:
 		break;
 
 	default:
@@ -426,17 +663,25 @@ void CHardwareConfig::SetupHardwareCaps( int nDXLevel, const HardwareCaps_t &act
 		m_Caps.m_UseFastClipping = true;
 	}
 
-	// 2b supports more lights than just 2.0
-	if ( m_Caps.m_SupportsPixelShaders_2_b )
+	if ( IsOpenGL() )
 	{
-		m_Caps.m_MaxNumLights = MAX_NUM_LIGHTS;
+		m_Caps.m_MaxNumLights = MIN( m_Caps.m_MaxNumLights, ( m_Caps.m_bSupportsStaticControlFlow && m_Caps.m_SupportsPixelShaders_2_b ) ? MAX_NUM_LIGHTS : ( MAX_NUM_LIGHTS - 2 ) );
+		m_Caps.m_bSupportsShadowDepthTextures = true;
 	}
-	else
+	else // not POSIX or emulated
 	{
-		m_Caps.m_MaxNumLights = MAX_NUM_LIGHTS-2;
+		// 2b supports more lights than just 2.0
+		if ( m_Caps.m_SupportsPixelShaders_2_b )
+		{
+			m_Caps.m_MaxNumLights = MIN( m_Caps.m_MaxNumLights, MAX_NUM_LIGHTS );
+		}
+		else
+		{
+			m_Caps.m_MaxNumLights = MIN( m_Caps.m_MaxNumLights, MAX_NUM_LIGHTS - 2 );
+		}
 	}
 
-	m_Caps.m_MaxNumLights = min( m_Caps.m_MaxNumLights, MAX_NUM_LIGHTS );
+	m_Caps.m_MaxNumLights = min( m_Caps.m_MaxNumLights, (int)MAX_NUM_LIGHTS );
 
 	memcpy( &m_UnOverriddenCaps, &m_Caps, sizeof(HardwareCaps_t) );
 }
@@ -513,11 +758,6 @@ VertexCompressionType_t CHardwareConfig::SupportsCompressedVertices() const
 	return m_Caps.m_SupportsCompressedVertices;
 }
 
-bool CHardwareConfig::SupportsNormalMapCompression() const
-{
-	return m_Caps.m_bSupportsNormalMapCompression;
-}
-
 bool CHardwareConfig::SupportsBorderColor() const
 {
 	return m_Caps.m_bSupportsBorderColor;
@@ -526,6 +766,11 @@ bool CHardwareConfig::SupportsBorderColor() const
 bool CHardwareConfig::SupportsFetch4() const
 {
 	return m_Caps.m_bSupportsFetch4;
+}
+
+bool CHardwareConfig::CanStretchRectFromTextures() const
+{
+	return m_Caps.m_bCanStretchRectFromTextures;
 }
 
 bool CHardwareConfig::SupportsVertexAndPixelShaders() const
@@ -569,6 +814,12 @@ bool CHardwareConfig::SupportsVertexShaders_2_0() const
 
 	return m_Caps.m_SupportsVertexShaders_2_0;
 }
+
+bool CHardwareConfig::SupportsStaticControlFlow() const
+{
+	return m_Caps.m_bSupportsStaticControlFlow;
+}
+
 
 bool CHardwareConfig::SupportsShaderModel_3_0() const
 {
@@ -639,9 +890,6 @@ int CHardwareConfig::GetShadowFilterMode() const
 	return 0;
 }
 
-float CHardwareConfig::GetShadowDepthBias() const { return FlashlightState_t().m_flShadowDepthBias; }
-float CHardwareConfig::GetShadowSlopeScaleDepthBias() const { return FlashlightState_t().m_flShadowSlopeScaleDepthBias; }
-
 static ConVar r_shader_srgb( "r_shader_srgb", "0", 0, "-1 = use hardware caps. 0 = use hardware srgb. 1 = use shader srgb(software lookup)" );		// -1=use caps 0=off 1=on
 
 int CHardwareConfig::NeedsShaderSRGBConversion() const
@@ -662,14 +910,14 @@ int CHardwareConfig::NeedsShaderSRGBConversion() const
 			return true;
 
 		default:
-			return m_Caps.m_bDX10Card;						// !!! change to return false after portal deport built!!!!!
+			return m_Caps.m_bDX10Blending;						// !!! change to return false after portal deport built!!!!!
 	}
 }
 
 bool CHardwareConfig::UsesSRGBCorrectBlending() const
 {
 	int cValue = r_shader_srgb.GetInt();
-	return ( cValue == 0 ) && ( ( m_Caps.m_bDX10Card ) || IsX360() );
+	return ( cValue == 0 ) && ( ( m_Caps.m_bDX10Blending ) || IsX360() );
 }
 
 static ConVar mat_disablehwmorph( "mat_disablehwmorph", "0", 0, "Disables HW morphing for particular mods" );
@@ -821,14 +1069,25 @@ int	 CHardwareConfig::MaxVertexShaderBlendMatrices() const
 	return m_Caps.m_MaxVertexShaderBlendMatrices;
 }
 
-int	 CHardwareConfig::MaxUserClipPlanes() const
+// Useful for testing fastclip on Windows
+extern ConVar mat_fastclip;
+
+int CHardwareConfig::MaxUserClipPlanes() const
 {
+	if ( mat_fastclip.GetBool() )
+		return 0;
+
 	return m_Caps.m_MaxUserClipPlanes;
 }
 
 bool CHardwareConfig::UseFastClipping() const
 {
-	return m_Caps.m_UseFastClipping;
+	// rbarris broke this up for easier view of outcome in debugger
+	bool fastclip = mat_fastclip.GetBool();
+	
+	bool result = m_Caps.m_UseFastClipping || fastclip;
+	
+	return result;
 }
 
 int CHardwareConfig::MaxTextureDepth() const
@@ -945,10 +1204,24 @@ bool CHardwareConfig::SpecifiesFogColorInLinearSpace() const
 	return m_Caps.m_bFogColorSpecifiedInLinearSpace;
 }
 
-
 bool CHardwareConfig::SupportsSRGB() const
 {
 	return m_Caps.m_SupportsSRGB;
+}
+
+bool CHardwareConfig::FakeSRGBWrite() const
+{
+	return m_Caps.m_FakeSRGBWrite;
+}
+
+bool CHardwareConfig::CanDoSRGBReadFromRTs() const
+{
+	return m_Caps.m_CanDoSRGBReadFromRTs;
+}
+
+bool CHardwareConfig::SupportsGLMixedSizeTargets() const
+{
+	return m_Caps.m_bSupportsGLMixedSizeTargets;
 }
 
 bool CHardwareConfig::IsAAEnabled() const
@@ -970,9 +1243,31 @@ int CHardwareConfig::GetMaxVertexTextureDimension() const
 
 HDRType_t CHardwareConfig::GetHDRType() const
 {
+	bool enabled = m_bHDREnabled;
+	int dxlev = GetDXSupportLevel();
+	int dxsupp = dxlev >= 90;
+	HDRType_t caps_hdr = m_Caps.m_HDRType;
+	HDRType_t result = HDR_TYPE_NONE;
+	
+	//printf("\nCHardwareConfig::GetHDRType...");
+	if (enabled)
+	{
+		//printf("-> enabled...");
+		if (dxsupp)
+		{
+			//printf("-> supported...");
+			result = caps_hdr;
+		}
+	}
+	
+	//printf("-> result is %d.\n", result);
+	return result;
+
+/*
 	if ( m_bHDREnabled && ( GetDXSupportLevel() >= 90 ) )
 		return m_Caps.m_HDRType;
 	return HDR_TYPE_NONE;
+*/
 }
 
 HDRType_t CHardwareConfig::GetHardwareHDRType() const

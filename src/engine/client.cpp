@@ -1605,6 +1605,10 @@ void CClientState::FinishSignonState_New()
 		return;
 	}
 
+	// We're going to force-touch a lot of textures and resources below, we don't want the streaming system to try and
+	// pull these in as if they were being used for normal rendering.
+	materials->SuspendTextureStreaming();
+
 	CL_InstallAndInvokeClientStringTableCallbacks();
 	
 #if 0
@@ -1642,14 +1646,22 @@ void CClientState::FinishSignonState_New()
 
 	// force a consistency check
 	ConsistencyCheck( true );
+
+	extern void V_RenderVGuiOnly();
+	V_RenderVGuiOnly();
 	
 	CL_RegisterResources();
+
+	V_RenderVGuiOnly();
 
 	// Done with all resources, issue prespawn command.
 	// Include server count in case server disconnects and changes level during d/l
 
 	// Tell rendering system we have a new set of models.
 	R_LevelInit();
+
+	// Balanced against SuspendTextureStreaming above
+	materials->ResumeTextureStreaming();
 
 	EngineVGui()->UpdateProgressBar(PROGRESS_SENDCLIENTINFO);
 	if ( !m_NetChannel )

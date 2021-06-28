@@ -1159,6 +1159,7 @@ void ReleaseMaterialSystemObjects()
 
 void RestoreMaterialSystemObjects( int nChangeFlags )
 {
+	bool bThreadingAllowed = Host_AllowQueuedMaterialSystem(false);
 	g_LostVideoMemory = false;
 
 	if ( nChangeFlags & MATERIAL_RESTORE_VERTEX_FORMAT_CHANGED )
@@ -1192,6 +1193,8 @@ void RestoreMaterialSystemObjects( int nChangeFlags )
 		modelrender->RestoreAllStaticPropColorData();
 #endif
 	}
+
+	Host_AllowQueuedMaterialSystem(bThreadingAllowed);
 }
 
 bool TangentSpaceSurfaceSetup( SurfaceHandle_t surfID, Vector &tVect )

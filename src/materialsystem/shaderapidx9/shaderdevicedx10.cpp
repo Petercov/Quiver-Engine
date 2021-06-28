@@ -223,6 +223,8 @@ bool CShaderDeviceMgrDx10::ComputeCapsFromD3D( HardwareCaps_t *pCaps, IDXGIAdapt
 	pCaps->m_MaxUserClipPlanes = 6;		// FIXME
 	pCaps->m_HDRType = bForceFloatHDR ? HDR_TYPE_FLOAT : HDR_TYPE_INTEGER;
 	pCaps->m_SupportsSRGB = true;
+	pCaps->m_FakeSRGBWrite = true;
+	pCaps->m_CanDoSRGBReadFromRTs = true;
 	pCaps->m_bSupportsSpheremapping = true;
 	pCaps->m_UseFastClipping = false;
 	pCaps->m_pShaderDLL[0] = 0;
@@ -236,11 +238,6 @@ bool CShaderDeviceMgrDx10::ComputeCapsFromD3D( HardwareCaps_t *pCaps, IDXGIAdapt
 	pCaps->m_bSupportsAlphaToCoverage = false;	// FIXME
 	pCaps->m_bSupportsShadowDepthTextures = true;
 	pCaps->m_bSupportsFetch4 = ( desc.VendorId == VENDORID_ATI );
-#if defined( COMPRESSED_NORMAL_FORMATS )
-	pCaps->m_bSupportsNormalMapCompression = true;
-#else
-	pCaps->m_bSupportsNormalMapCompression = false;
-#endif
 	pCaps->m_bSupportsBorderColor = true;
 	pCaps->m_ShadowDepthTextureFormat = IMAGE_FORMAT_UNKNOWN;
 	pCaps->m_nMaxViewports = 4;
@@ -250,7 +247,7 @@ bool CShaderDeviceMgrDx10::ComputeCapsFromD3D( HardwareCaps_t *pCaps, IDXGIAdapt
 	pCaps->m_flMinGammaControlPoint = gammaCaps.MinConvertedValue;
 	pCaps->m_flMaxGammaControlPoint = gammaCaps.MaxConvertedValue;
 	pCaps->m_nGammaControlPointCount = gammaCaps.NumGammaControlPoints;
-
+	pCaps->m_bCanStretchRectFromTextures = true;
 	return true;
 }
 

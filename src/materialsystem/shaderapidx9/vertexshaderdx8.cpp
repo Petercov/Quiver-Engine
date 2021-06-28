@@ -24,6 +24,8 @@
 #include "materialsystem/ishader.h"
 #include "ishadersystem.h"
 #include "tier0/fasttimer.h"
+#include <sys/stat.h>
+#include <time.h>
 #include <stdlib.h>
 #include "filesystem.h"
 #include "convar.h"
@@ -112,7 +114,18 @@ static FILE *GetDebugFileHandle( void )
 }
 #endif // PROFILE_SHADER_CREATE
 
+#ifdef DX_TO_GL_ABSTRACTION
+	// mat_autoload_glshaders instructs the engine to load a cached shader table at startup
+	// it will try for glshaders.cfg first, then fall back to glbaseshaders.cfg if not found
+ConVar mat_autoload_glshaders( "mat_autoload_glshaders", "1" );
 
+	// mat_autosave_glshaders instructs the engine to save out the shader table at key points
+	// to the filename glshaders.cfg
+	//
+ConVar mat_autosave_glshaders( "mat_autosave_glshaders", "1" );
+
+
+#endif
 //-----------------------------------------------------------------------------
 // Explicit instantiation of shader buffer implementation
 //-----------------------------------------------------------------------------
@@ -128,6 +141,9 @@ static CUtlMap< CRC32_t, int, int > s_UniquePS( 0, 0, DefLessFunc( CRC32_t ) );
 static CUtlMap< IDirect3DVertexShader9*, CRC32_t, int > s_VSLookup( 0, 0, DefLessFunc( IDirect3DVertexShader9* ) );
 static CUtlMap< IDirect3DPixelShader9*, CRC32_t, int > s_PSLookup( 0, 0, DefLessFunc( IDirect3DPixelShader9* ) );
 #endif
+
+static int s_NumPixelShadersCreated = 0;
+static int s_NumVertexShadersCreated = 0;
 
 static void RegisterVS( const void* pShaderBits, int nShaderSize, IDirect3DVertexShader9* pShader )
 {
@@ -231,17 +247,39 @@ static void UnregisterPS( IDirect3DPixelShader9* pShader )
 #endif
 }
 
-
 //-----------------------------------------------------------------------------
 // The lovely low-level dx call to create a vertex shader
 //-----------------------------------------------------------------------------
-static HardwareShader_t CreateD3DVertexShader( DWORD *pByteCode, int numBytes )
+static HardwareShader_t CreateD3DVertexShader( DWORD *pByteCode, int numBytes, const char *pShaderName, char *debugLabel = NULL )
 {
 	MEM_ALLOC_D3D_CREDIT();
 
+	if ( !pByteCode )
+	{
+		Assert( 0 );
+		return INVALID_HARDWARE_SHADER;
+	}
+
 	// Compute the vertex specification
 	HardwareShader_t hShader;
-	HRESULT hr = Dx9Device()->CreateVertexShader( pByteCode, (IDirect3DVertexShader9 **)&hShader );
+
+	#ifdef DX_TO_GL_ABSTRACTION	
+		HRESULT hr = Dx9Device()->CreateVertexShader( pByteCode, (IDirect3DVertexShader9 **)&hShader, pShaderName, debugLabel );
+	#else
+		if ( IsEmulatingGL() )
+		{
+			DWORD dwVersion = D3DXGetShaderVersion(	pByteCode );
+			REFERENCE( dwVersion );
+			Assert ( D3DSHADER_VERSION_MAJOR( dwVersion ) == 2 );
+		}
+
+	#if defined(_X360) || !defined(DX_TO_GL_ABSTRACTION)
+		HRESULT hr = Dx9Device()->CreateVertexShader( pByteCode, (IDirect3DVertexShader9 **)&hShader );
+	#else
+		HRESULT hr = Dx9Device()->CreateVertexShader( pByteCode, (IDirect3DVertexShader9 **)&hShader, pShaderName );
+#endif
+
+	#endif
 
 	// NOTE: This isn't recorded before the CreateVertexShader because
 	// we don't know the value of shader until after the CreateVertexShader.
@@ -257,6 +295,7 @@ static HardwareShader_t CreateD3DVertexShader( DWORD *pByteCode, int numBytes )
 	}
 	else
 	{
+		s_NumVertexShadersCreated++;
 		RegisterVS( pByteCode, numBytes, (IDirect3DVertexShader9 *)hShader );
 	}
 	return hShader;
@@ -324,7 +363,7 @@ static ConVar mat_disable_ps_patch( "mat_disable_ps_patch", "0" );
 //-----------------------------------------------------------------------------
 // The lovely low-level dx call to create a pixel shader
 //-----------------------------------------------------------------------------
-static HardwareShader_t CreateD3DPixelShader( DWORD *pByteCode, unsigned int nCentroidMask, int numBytes )
+static HardwareShader_t CreateD3DPixelShader( DWORD *pByteCode, unsigned int nCentroidMask, int numBytes, const char* pShaderName, char *debugLabel = NULL )
 {
 	MEM_ALLOC_D3D_CREDIT();
 	
@@ -342,8 +381,26 @@ static HardwareShader_t CreateD3DPixelShader( DWORD *pByteCode, unsigned int nCe
 	}
 
 	HardwareShader_t shader;
-	HRESULT hr = Dx9Device()->CreatePixelShader( pByteCode, ( IDirect3DPixelShader ** )&shader );
-
+	#if defined( DX_TO_GL_ABSTRACTION ) 
+		#if defined( OSX ) 
+			HRESULT hr = Dx9Device()->CreatePixelShader( pByteCode, ( IDirect3DPixelShader ** )&shader, pShaderName, debugLabel );
+		#else
+			HRESULT hr = Dx9Device()->CreatePixelShader( pByteCode, ( IDirect3DPixelShader ** )&shader, pShaderName, debugLabel, &nCentroidMask );
+		#endif
+	#else
+		if ( IsEmulatingGL() )
+		{
+			DWORD dwVersion;
+			dwVersion = D3DXGetShaderVersion( pByteCode );
+			Assert ( D3DSHADER_VERSION_MAJOR( dwVersion ) == 2 );
+		}
+#if defined(_X360) || !defined(DX_TO_GL_ABSTRACTION)
+		HRESULT hr = Dx9Device()->CreatePixelShader( pByteCode, ( IDirect3DPixelShader ** )&shader );
+#else
+		HRESULT hr = Dx9Device()->CreatePixelShader( pByteCode, ( IDirect3DPixelShader ** )&shader, pShaderName );
+	#endif
+	#endif
+	
 	// NOTE: We have to do this after creating the pixel shader since we don't know
 	// lookup.m_PixelShader yet!!!!!!!
 	RECORD_COMMAND( DX8_CREATE_PIXEL_SHADER, 3 );
@@ -358,6 +415,7 @@ static HardwareShader_t CreateD3DPixelShader( DWORD *pByteCode, unsigned int nCe
 	}
 	else
 	{
+		s_NumPixelShadersCreated++;
 		RegisterPS( pByteCode, numBytes, ( IDirect3DPixelShader9* )shader );
 	}
 
@@ -466,8 +524,8 @@ public:
 	virtual void				DestroyVertexShader( VertexShaderHandle_t hShader );
 	virtual PixelShaderHandle_t CreatePixelShader( IShaderBuffer* pShaderBuffer );
 	virtual void				DestroyPixelShader( PixelShaderHandle_t hShader );
-	virtual VertexShader_t		CreateVertexShader( const char *pVertexShaderFile, int nStaticVshIndex = 0 );
-	virtual PixelShader_t		CreatePixelShader( const char *pPixelShaderFile, int nStaticPshIndex = 0 );
+	virtual VertexShader_t		CreateVertexShader( const char *pVertexShaderFile, int nStaticVshIndex = 0, char *debugLabel = NULL );
+	virtual PixelShader_t		CreatePixelShader( const char *pPixelShaderFile, int nStaticPshIndex = 0, char *debugLabel = NULL );
 	virtual void				SetVertexShader( VertexShader_t shader );
 	virtual void				SetPixelShader( PixelShader_t shader );
 	virtual void				BindVertexShader( VertexShaderHandle_t shader );
@@ -482,7 +540,11 @@ public:
 	const char					*GetActiveVertexShaderName();
 	const char					*GetActivePixelShaderName();
 	bool						CreateDynamicCombos_Ver4( void *pContext, uint8 *pComboBuffer );
-	bool						CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuffer );
+	bool						CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuffer, char *debugLabel = NULL );
+
+#if defined( DX_TO_GL_ABSTRACTION )
+	virtual void				DoStartupShaderPreloading();
+#endif
 
 	static void					QueuedLoaderCallback( void *pContext, void *pContext2, const void *pData, int nSize, LoaderError_t loaderError );
 
@@ -592,7 +654,7 @@ private:
 	// Destroy a particular pixel shader
 	void					DestroyPixelShader( PixelShader_t shader );
 
-	bool					LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexShader );
+	bool					LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexShader, char *debugLabel = NULL );
 	FileHandle_t			OpenFileAndLoadHeader( const char *pFileName, ShaderHeader_t *pHeader );
 
 #ifdef DYNAMIC_SHADER_COMPILE
@@ -602,6 +664,15 @@ private:
 #endif
 
 	void					DisassembleShader( ShaderLookup_t *pLookup, int dynamicCombo, uint8 *pByteCode );
+	void					WriteTranslatedFile( ShaderLookup_t *pLookup, int dynamicCombo, char *pFileContents, char *pFileExtension );
+
+	// DX_TO_GL_ABSTRACTION only, no-op otherwise
+	
+	void					SaveShaderCache( char *cacheName );	// query GLM pair cache for all active shader pairs and write them to disk in named file
+	bool					LoadShaderCache( char *cacheName );	// read named file, establish compiled shader sets for each vertex+static and pixel+static, then link pairs as listed in table
+																// return true on success, false if file not found
+
+	// old void					WarmShaderCache();
 
 	CUtlFixedLinkedList< ShaderLookup_t > m_VertexShaderDict;
 	CUtlFixedLinkedList< ShaderLookup_t > m_PixelShaderDict;
@@ -767,11 +838,17 @@ VertexShaderHandle_t CShaderManager::CreateVertexShader( IShaderBuffer* pShaderB
 {
 	// Create the vertex shader
 	IDirect3DVertexShader9 *pVertexShader = NULL;
+
+#if defined(_X360) || !defined(DX_TO_GL_ABSTRACTION)
 	HRESULT hr = Dx9Device()->CreateVertexShader( (const DWORD*)pShaderBuffer->GetBits(), &pVertexShader );
+#else
+	HRESULT hr = Dx9Device()->CreateVertexShader( (const DWORD*)pShaderBuffer->GetBits(), &pVertexShader, NULL );
+#endif
 
 	if ( FAILED( hr ) || !pVertexShader )
 		return VERTEX_SHADER_HANDLE_INVALID;
 
+	s_NumVertexShadersCreated++;
 	RegisterVS( pShaderBuffer->GetBits(), pShaderBuffer->GetSize(), pVertexShader );
 
 	// Insert the shader into the dictionary of shaders
@@ -789,7 +866,7 @@ void CShaderManager::DestroyVertexShader( VertexShaderHandle_t hShader )
 
 	UnregisterVS( pVertexShader );
 
-	VerifyEquals( pVertexShader->Release(), 0 );
+	VerifyEquals( (int)pVertexShader->Release(), 0 );
 	m_RawVertexShaderDict.Remove( i );
 }
 
@@ -797,10 +874,16 @@ PixelShaderHandle_t CShaderManager::CreatePixelShader( IShaderBuffer* pShaderBuf
 {
 	// Create the vertex shader
 	IDirect3DPixelShader9 *pPixelShader = NULL;
+#if defined(_X360) || !defined(DX_TO_GL_ABSTRACTION)
 	HRESULT hr = Dx9Device()->CreatePixelShader( (const DWORD*)pShaderBuffer->GetBits(), &pPixelShader );
+#else
+	HRESULT hr = Dx9Device()->CreatePixelShader( (const DWORD*)pShaderBuffer->GetBits(), &pPixelShader, NULL );
+#endif
 
 	if ( FAILED( hr ) || !pPixelShader )
 		return PIXEL_SHADER_HANDLE_INVALID;
+
+	s_NumPixelShadersCreated++;
 
 	RegisterPS( pShaderBuffer->GetBits(), pShaderBuffer->GetSize(), pPixelShader );
 
@@ -819,7 +902,7 @@ void CShaderManager::DestroyPixelShader( PixelShaderHandle_t hShader )
 
 	UnregisterPS( pPixelShader );
 
-	VerifyEquals( pPixelShader->Release(), 0 );
+	VerifyEquals( (int)pPixelShader->Release(), 0 );
 	m_RawPixelShaderDict.Remove( i );
 }
 
@@ -846,11 +929,23 @@ void CShaderManager::CreateStaticShaders()
 		// GR - hack for illegal materials
 		const DWORD psIllegalMaterial[] =
 		{
-			0xffff0101, 0x00000051, 0xa00f0000, 0x00000000, 0x3f800000, 0x00000000, 
-			0x3f800000, 0x00000001, 0x800f0000, 0xa0e40000, 0x0000ffff
+			#ifdef DX_TO_GL_ABSTRACTION
+				// Use a PS 2.0 binary shader on DX_TO_GL_ABSTRACTION
+				0xffff0200, 0x05000051, 0xa00f0000, 0x3f800000,
+				0x00000000, 0x3f800000, 0x3f800000, 0x02000001,
+				0x800f0000, 0xa0e40000, 0x02000001, 0x800f0800,
+				0x80e40000, 0x0000ffff
+			#else
+				0xffff0101, 0x00000051, 0xa00f0000, 0x00000000, 0x3f800000, 0x00000000, 
+				0x3f800000, 0x00000001, 0x800f0000, 0xa0e40000, 0x0000ffff
+			#endif
 		};
 		// create default shader
+#if defined(_X360) || !defined(DX_TO_GL_ABSTRACTION)
 		Dx9Device()->CreatePixelShader( psIllegalMaterial, ( IDirect3DPixelShader9 ** )&s_pIllegalMaterialPS );
+#else
+		Dx9Device()->CreatePixelShader( psIllegalMaterial, ( IDirect3DPixelShader9 ** )&s_pIllegalMaterialPS, NULL );
+#endif
 	}
 }
 
@@ -926,7 +1021,10 @@ const CShaderManager::ShaderCombos_t *CShaderManager::FindOrCreateShaderCombos( 
 	Q_strncat( filename, pShaderName, MAX_PATH, COPY_ALL_CHARACTERS );
 	Q_strncat( filename, ".vsh", MAX_PATH, COPY_ALL_CHARACTERS );
 	CUtlInplaceBuffer bffr( 0, 0, CUtlInplaceBuffer::TEXT_BUFFER );
-	if ( bool bOpenResult = g_pFullFileSystem->ReadFile( filename, NULL, bffr ) )
+	
+	bool bOpenResult = g_pFullFileSystem->ReadFile( filename, NULL, bffr );
+	
+	if ( bOpenResult )
 	{
 		NULL;
 	}
@@ -1623,12 +1721,21 @@ retry_compile:
 #endif
 		if ( bVertexShader )
 		{
-			return CreateD3DVertexShader( ( DWORD * )pShader->GetBufferPointer(), pShader->GetBufferSize() );
+			return CreateD3DVertexShader( ( DWORD * )pShader->GetBufferPointer(), pShader->GetBufferSize(), pShaderName );
 		}
 		else
 		{
-			return CreateD3DPixelShader( ( DWORD * )pShader->GetBufferPointer(), 0, pShader->GetBufferSize() ); // hack hack hack!  need to get centroid info from the source
+			return CreateD3DPixelShader( ( DWORD * )pShader->GetBufferPointer(), 0, pShader->GetBufferSize(), pShaderName ); // hack hack hack!  need to get centroid info from the source
 		}
+
+
+#if defined( DYNAMIC_SHADER_COMPILE )
+		// We keep up with whether we hit a compile error above.  If we did, then we likely need to recompile everything again since we could have changed global code.
+		if ( bShadersNeedFlush )
+		{
+			MatFlushShaders();
+		}
+#endif
 	}
 	if ( pShader )
 	{
@@ -1703,6 +1810,25 @@ FileHandle_t CShaderManager::OpenFileAndLoadHeader( const char *pFileName, Shade
 	}
 
 	return fp;
+}
+
+//---------------------------------------------------------------------------------------------------------
+// Writes text files named for looked-up shaders.  Used by GL shader translator to dump code for debugging
+//---------------------------------------------------------------------------------------------------------
+void CShaderManager::WriteTranslatedFile( ShaderLookup_t *pLookup, int dynamicCombo, char *pFileContents, char *pFileExtension )
+{
+	const char *pName = m_ShaderSymbolTable.String( pLookup->m_Name );
+	int nNumChars = V_strlen( pFileContents );
+
+	CUtlBuffer tempBuffer;
+	tempBuffer.SetBufferType( true, false );
+	tempBuffer.EnsureCapacity( nNumChars );
+	memcpy( ( char * )tempBuffer.Base(), pFileContents, nNumChars );
+	tempBuffer.SeekPut( CUtlBuffer::SEEK_CURRENT, nNumChars );
+
+	char filename[MAX_PATH];
+	sprintf( filename, "%s_%d_%d.%s", pName, pLookup->m_nStaticIndex, dynamicCombo, pFileExtension );
+	g_pFullFileSystem->WriteFile( filename, "DEFAULT_WRITE_PATH", tempBuffer );
 }
 
 //-----------------------------------------------------------------------------
@@ -1814,14 +1940,16 @@ bool CShaderManager::CreateDynamicCombos_Ver4( void *pContext, uint8 *pComboBuff
 		}
 		else
 		{
+			const char *pShaderName = m_ShaderSymbolTable.String( pLookup->m_Name );
 			if ( pFileCache->m_bVertexShader )
 			{
-				hardwareShader = CreateD3DVertexShader( reinterpret_cast< DWORD *>( pByteCode ), nByteCodeSize );
+				hardwareShader = CreateD3DVertexShader( reinterpret_cast< DWORD *>( pByteCode ), nByteCodeSize, pShaderName );
 			}
 			else
 			{
-				hardwareShader = CreateD3DPixelShader( reinterpret_cast< DWORD *>( pByteCode ), pHeader->m_nCentroidMask, nByteCodeSize );
+				hardwareShader = CreateD3DPixelShader( reinterpret_cast< DWORD *>( pByteCode ), pHeader->m_nCentroidMask, nByteCodeSize, pShaderName );
 			}
+
 			if ( hardwareShader == INVALID_HARDWARE_SHADER )
 			{
 				Assert( 0 );
@@ -1849,7 +1977,9 @@ static uint32 NextULONG( uint8 * &pData )
 	pData += sizeof( nRet );
 	return nRet;
 }
-bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuffer )
+
+
+bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuffer, char *debugLabel )
 {
 	ShaderLookup_t* pLookup = (ShaderLookup_t *)pContext;
 	ShaderFileCache_t *pFileCache = &m_ShaderFileCache[pLookup->m_hShaderFileCache];
@@ -1857,6 +1987,8 @@ bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuff
 
 	uint8 *pUnpackBuffer = new uint8[MAX_SHADER_UNPACKED_BLOCK_SIZE];
 
+	char *debugLabelPtr = debugLabel;	// can be moved to point at something else if need be
+	
 	// now, loop through all blocks
 	bool bOK = true;
 	while ( bOK )
@@ -1947,11 +2079,11 @@ bool CShaderManager::CreateDynamicCombos_Ver5( void *pContext, uint8 *pComboBuff
 			{
 				if ( pFileCache->m_bVertexShader )
 				{
-					hardwareShader = CreateD3DVertexShader( reinterpret_cast< DWORD *>( pReadPtr ), nShaderSize );
+					hardwareShader = CreateD3DVertexShader( reinterpret_cast< DWORD *>( pReadPtr ), nShaderSize, debugLabel, debugLabel);
 				}
 				else
 				{
-					hardwareShader = CreateD3DPixelShader( reinterpret_cast< DWORD *>( pReadPtr ), pFileCache->m_Header.m_nCentroidMask, nShaderSize );
+					hardwareShader = CreateD3DPixelShader( reinterpret_cast< DWORD *>( pReadPtr ), pFileCache->m_Header.m_nCentroidMask, nShaderSize, debugLabel, debugLabel);
 				}
 				if ( hardwareShader == INVALID_HARDWARE_SHADER )
 				{
@@ -2000,7 +2132,7 @@ void CShaderManager::QueuedLoaderCallback( void *pContext, void *pContext2, cons
 //-----------------------------------------------------------------------------
 // Loads all shaders
 //-----------------------------------------------------------------------------
-bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexShader )
+bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexShader, char *debugLabel )
 {
 #ifdef DYNAMIC_SHADER_COMPILE
 	lookup.m_Flags &= ~SHADER_DYNAMIC_COMPILE_IS_HLSL;
@@ -2208,7 +2340,7 @@ bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexS
 		}
 		else
 		{
-			bOK = CreateDynamicCombos_Ver5( &lookup, pOptimalBuffer );
+			bOK = CreateDynamicCombos_Ver5( &lookup, pOptimalBuffer, debugLabel );
 		}
 
 		g_pFullFileSystem->FreeOptimalReadBuffer( pOptimalBuffer );
@@ -2227,7 +2359,7 @@ bool CShaderManager::LoadAndCreateShaders( ShaderLookup_t &lookup, bool bVertexS
 //-----------------------------------------------------------------------------
 // Creates and destroys vertex shaders
 //-----------------------------------------------------------------------------
-VertexShader_t CShaderManager::CreateVertexShader( const char *pFileName, int nStaticVshIndex )
+VertexShader_t CShaderManager::CreateVertexShader( const char *pFileName, int nStaticVshIndex, char *debugLabel )
 {
 	MEM_ALLOC_CREDIT();
 
@@ -2244,7 +2376,7 @@ VertexShader_t CShaderManager::CreateVertexShader( const char *pFileName, int nS
 	if ( shader == m_VertexShaderDict.InvalidIndex() )
 	{
 		shader = m_VertexShaderDict.AddToTail( lookup );
-		if ( !LoadAndCreateShaders( m_VertexShaderDict[shader], true ) )
+		if ( !LoadAndCreateShaders( m_VertexShaderDict[shader], true, debugLabel ) )
 		{
 			return INVALID_SHADER;
 		}
@@ -2256,7 +2388,7 @@ VertexShader_t CShaderManager::CreateVertexShader( const char *pFileName, int nS
 //-----------------------------------------------------------------------------
 // Create pixel shader
 //-----------------------------------------------------------------------------
-PixelShader_t CShaderManager::CreatePixelShader( const char *pFileName, int nStaticPshIndex )
+PixelShader_t CShaderManager::CreatePixelShader( const char *pFileName, int nStaticPshIndex, char *debugLabel )
 {
 	MEM_ALLOC_CREDIT();
 
@@ -2273,7 +2405,7 @@ PixelShader_t CShaderManager::CreatePixelShader( const char *pFileName, int nSta
 	if ( shader == m_PixelShaderDict.InvalidIndex() )
 	{
 		shader = m_PixelShaderDict.AddToTail( lookup );
-		if ( !LoadAndCreateShaders( m_PixelShaderDict[shader], false ) )
+		if ( !LoadAndCreateShaders( m_PixelShaderDict[shader], false, debugLabel ) )
 		{
 			return INVALID_SHADER;
 		}
@@ -2426,7 +2558,7 @@ void CShaderManager::SetVertexShader( VertexShader_t shader )
 		ShaderStaticCombos_t::ShaderCreationData_t *pCreationData = &lookup.m_ShaderStaticCombos.m_pCreationData[vshIndex];
 #endif
 
-		dxshader = CreateD3DVertexShader( ( DWORD * )pCreationData->ByteCode.Base(), pCreationData->ByteCode.Count() );
+		dxshader = CreateD3DVertexShader( ( DWORD * )pCreationData->ByteCode.Base(), pCreationData->ByteCode.Count(), vshDebugName[vshDebugIndex], vshDebugName[vshDebugIndex]);
 
 #ifdef DYNAMIC_SHADER_COMPILE 
 		// copy the compiled shader handle back to wherever it's supposed to be stored
@@ -2527,7 +2659,7 @@ void CShaderManager::SetPixelShader( PixelShader_t shader )
 		ShaderStaticCombos_t::ShaderCreationData_t *pCreationData = &lookup.m_ShaderStaticCombos.m_pCreationData[pshIndex];
 #endif
 
-		dxshader = CreateD3DPixelShader( ( DWORD * )pCreationData->ByteCode.Base(), pCreationData->iCentroidMask, pCreationData->ByteCode.Count() );
+		dxshader = CreateD3DPixelShader( ( DWORD * )pCreationData->ByteCode.Base(), pCreationData->iCentroidMask, pCreationData->ByteCode.Count(), pshDebugName[pshDebugIndex], pshDebugName[pshDebugIndex]);
 
 #ifdef DYNAMIC_SHADER_COMPILE 
 		// copy the compiled shader handle back to wherever it's supposed to be stored
@@ -2796,8 +2928,56 @@ void CShaderManager::FlushShaders( void )
 #endif
 
 #ifdef DYNAMIC_SHADER_COMPILE
-CON_COMMAND( mat_flushshaders, "flush all hardware shaders when using DYNAMIC_SHADER_COMPILE" )
+static void MatFlushShaders( void )
 {
+#if defined( _X360 )
+	XBX_rSyncShaderCache();
+#endif
 	( ( CShaderManager * )ShaderManager() )->FlushShaders();
 }
 #endif
+
+#ifdef DYNAMIC_SHADER_COMPILE
+CON_COMMAND( mat_flushshaders, "flush all hardware shaders when using DYNAMIC_SHADER_COMPILE" )
+{
+	MatFlushShaders();
+}
+#endif
+
+CON_COMMAND( mat_shadercount, "display count of all shaders and reset that count" )
+{
+	Warning( "Num Pixel Shaders = %d Vertex Shaders=%d\n", s_NumPixelShadersCreated, s_NumVertexShadersCreated );
+	s_NumVertexShadersCreated = 0;
+	s_NumPixelShadersCreated = 0;
+}
+
+#if defined( DX_TO_GL_ABSTRACTION )
+void	CShaderManager::DoStartupShaderPreloading()
+{
+	if (mat_autoload_glshaders.GetInt())
+	{
+		double flStartTime = Plat_FloatTime();
+
+		s_NumVertexShadersCreated = s_NumPixelShadersCreated = 0;
+
+		// try base file
+#ifdef OSX		
+		if ( !LoadShaderCache("glbaseshaders_osx.cfg") )		// factory cache
+#else
+		if ( !LoadShaderCache("glbaseshaders.cfg") )		// factory cache
+#endif
+		{
+			Warning( "Could not find base GL shader cache file\n" );
+		}
+
+		if ( !LoadShaderCache("glshaders.cfg") )			// user mutable cache
+		{
+			Warning( "Could not find user GL shader cache file\n" );
+		}
+
+		double flEndTime = Plat_FloatTime();
+		Msg( "Precache: Took %d ms, Vertex %d, Pixel %d\n", ( int )( ( flEndTime - flStartTime ) * 1000.0 ), s_NumVertexShadersCreated, s_NumPixelShadersCreated );
+	}
+}
+#endif
+

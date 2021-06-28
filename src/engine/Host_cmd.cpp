@@ -720,6 +720,7 @@ void Host_Disconnect( bool bShowMainMenu )
 		cl.Disconnect(bShowMainMenu);
 	}
 #endif
+	Host_AllowQueuedMaterialSystem(false);
 	HostState_GameShutdown();
 }
 

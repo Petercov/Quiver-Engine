@@ -272,6 +272,37 @@ static CStoreIDEntry* FindPrevFileByStoreID( CUtlDict< CUtlVector<CStoreIDEntry>
 	}
 }
 
+//-----------------------------------------------------------------------------
+
+class CBaseFileSystem::CFileCacheObject
+{
+public:
+	CFileCacheObject(CBaseFileSystem* pFS);
+	~CFileCacheObject();
+	void AddFiles(const char** ppFileNames, int nFileNames);
+	bool IsReady() const { return m_nPending == 0; }
+
+	static void IOCallback(const FileAsyncRequest_t& request, int nBytesRead, FSAsyncStatus_t err);
+
+	struct Info_t
+	{
+		const char* pFileName;
+		FSAsyncControl_t hIOAsync;
+		CMemoryFileBacking* pBacking;
+		CFileCacheObject* pOwner;
+	};
+
+	CBaseFileSystem* m_pFS;
+	CInterlockedInt m_nPending;
+	CThreadFastMutex m_InfosMutex;
+	CUtlVector< Info_t* > m_Infos;
+
+private:
+	void ProcessNewEntries(int start);
+
+	CFileCacheObject(const CFileCacheObject&); // not implemented
+	CFileCacheObject& operator=(const CFileCacheObject&); // not implemented
+};
 
 //-----------------------------------------------------------------------------
 // constructor
@@ -3848,6 +3879,10 @@ void CBaseFileSystem::RegisterFileWhitelist( IFileList *pWantCRCList, IFileList 
 	}
 }
 
+void CBaseFileSystem::NotifyFileUnloaded(const char* pszFilename, const char* pPathId)
+{
+	//m_FileTracker2.NoteFileUnloaded(pszFilename, pPathId);
+}
 
 int CBaseFileSystem::GetUnverifiedCRCFiles( CUnverifiedCRCFile *pFiles, int nMaxFiles )
 {
@@ -5139,6 +5174,109 @@ bool CBaseFileSystem::GetOptimalIOConstraints( FileHandle_t hFile, unsigned *pOf
 }
 
 //-----------------------------------------------------------------------------
+
+FileCacheHandle_t CBaseFileSystem::CreateFileCache()
+{
+	return new CFileCacheObject(this);
+}
+
+//-----------------------------------------------------------------------------
+
+void CBaseFileSystem::AddFilesToFileCache(FileCacheHandle_t cacheId, const char** ppFileNames, int nFileNames, const char* pPathID)
+{
+	// For now, assuming that we're only used with GAME.
+	Assert(pPathID && Q_strcasecmp(pPathID, "GAME") == 0);
+	return static_cast<CFileCacheObject*>(cacheId)->AddFiles(ppFileNames, nFileNames);
+}
+
+//-----------------------------------------------------------------------------
+
+bool CBaseFileSystem::IsFileCacheLoaded(FileCacheHandle_t cacheId)
+{
+	return static_cast<CFileCacheObject*>(cacheId)->IsReady();
+}
+
+//-----------------------------------------------------------------------------
+
+void CBaseFileSystem::DestroyFileCache(FileCacheHandle_t cacheId)
+{
+	delete static_cast<CFileCacheObject*>(cacheId);
+}
+
+//-----------------------------------------------------------------------------
+
+bool CBaseFileSystem::IsFileCacheFileLoaded(FileCacheHandle_t cacheId, const char* pFileName)
+{
+#ifdef _DEBUG
+	CFileCacheObject* pFileCache = static_cast<CFileCacheObject*>(cacheId);
+	bool bFileIsHeldByCache = false;
+	{
+		AUTO_LOCK(pFileCache->m_InfosMutex);
+		for (int i = 0; i < pFileCache->m_Infos.Count(); ++i)
+		{
+			if (pFileCache->m_Infos[i]->pFileName && Q_strcmp(pFileCache->m_Infos[i]->pFileName, pFileName))
+			{
+				bFileIsHeldByCache = true;
+				break;
+			}
+		}
+	}
+	Assert(bFileIsHeldByCache);
+#endif
+
+	AUTO_LOCK(m_MemoryFileMutex);
+	return m_MemoryFileHash.Find(pFileName) != m_MemoryFileHash.InvalidHandle();
+}
+
+//-----------------------------------------------------------------------------
+
+bool CBaseFileSystem::RegisterMemoryFile(CMemoryFileBacking* pFile, CMemoryFileBacking** ppExistingFileWithRef)
+{
+	Assert(pFile->m_pFS == static_cast<IFileSystem*>(this));
+	Assert(pFile->m_pFileName && pFile->m_pFileName[0]);
+	AUTO_LOCK(m_MemoryFileMutex);
+
+	CMemoryFileBacking* pInTable = m_MemoryFileHash[m_MemoryFileHash.Insert(pFile->m_pFileName, pFile)];
+	pInTable->m_nRegistered++;
+	pInTable->AddRef(); // either for table or for ppExistingFileWithRef return
+
+	if (pFile == pInTable)
+	{
+		Assert(pInTable->m_nRegistered == 1);
+		*ppExistingFileWithRef = NULL;
+		return true;
+	}
+	else
+	{
+		Assert(pInTable->m_nRegistered > 1);
+		*ppExistingFileWithRef = pInTable;
+		return false;
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+void CBaseFileSystem::UnregisterMemoryFile(CMemoryFileBacking* pFile)
+{
+	Assert(pFile->m_pFS == static_cast<IFileSystem*>(this) && pFile->m_nRegistered > 0);
+	bool bRelease = false;
+	{
+		AUTO_LOCK(m_MemoryFileMutex);
+		pFile->m_nRegistered--;
+		if (pFile->m_nRegistered == 0)
+		{
+			m_MemoryFileHash.Remove(pFile->m_pFileName);
+			bRelease = true;
+		}
+	}
+	// Release potentially a complex op, prefer to perform it outside of mutex.
+	if (bRelease)
+	{
+		pFile->Release();
+	}
+}
+
+//-----------------------------------------------------------------------------
 // Purpose: Constructs a file handle
 // Input  : base file system handle
 // Output : 
@@ -5359,6 +5497,164 @@ bool CFileHandle::EndOfFile()
 	Assert( IsValid() );
 
 	return ( Tell() >= Size() );
+}
+
+//-----------------------------------------------------------------------------
+
+int CMemoryFileHandle::Read(void* pBuffer, int nDestSize, int nLength)
+{
+	nLength = min(nLength, (int)m_nLength - m_nPosition);
+	if (nLength > 0)
+	{
+		Assert(m_nPosition >= 0);
+		memcpy(pBuffer, m_pBacking->m_pData + m_nPosition, nLength);
+		m_nPosition += nLength;
+		return nLength;
+	}
+	if (m_nPosition >= (int)m_nLength)
+	{
+		return -1;
+	}
+	return 0;
+}
+
+int CMemoryFileHandle::Seek(int64 nOffset64, int nWhence)
+{
+	if (nWhence == SEEK_SET)
+	{
+		m_nPosition = (int)clamp(nOffset64, 0ll, m_nLength);
+	}
+	else if (nWhence == SEEK_CUR)
+	{
+		m_nPosition += (int)clamp(nOffset64, -(int64)m_nPosition, m_nLength - m_nPosition);
+	}
+	else if (nWhence == SEEK_END)
+	{
+		m_nPosition = (int)m_nLength + (int)clamp(nOffset64, -m_nLength, 0ll);
+	}
+	return m_nPosition;
+}
+
+//-----------------------------------------------------------------------------
+
+CBaseFileSystem::CFileCacheObject::CFileCacheObject(CBaseFileSystem* pFS)
+	: m_pFS(pFS)
+{
+}
+
+void CBaseFileSystem::CFileCacheObject::AddFiles(const char** ppFileNames, int nFileNames)
+{
+	CUtlVector< Info_t* > infos;
+	infos.SetCount(nFileNames);
+	for (int i = 0; i < nFileNames; ++i)
+	{
+		infos[i] = new Info_t;
+		Info_t& info = *infos[i];
+		info.pFileName = strdup(ppFileNames[i]);
+		V_FixSlashes((char*)info.pFileName);
+#ifdef _WIN32
+		Q_strlower((char*)info.pFileName);
+#endif
+		info.hIOAsync = NULL;
+		info.pBacking = NULL;
+		info.pOwner = NULL;
+	}
+
+	AUTO_LOCK(m_InfosMutex);
+	int offset = m_Infos.AddMultipleToTail(nFileNames, infos.Base());
+
+	m_nPending += nFileNames;
+	ProcessNewEntries(offset);
+}
+
+void CBaseFileSystem::CFileCacheObject::ProcessNewEntries(int start)
+{
+	for (int i = start; i < m_Infos.Count(); ++i)
+	{
+		Info_t& info = *m_Infos[i];
+		if (!info.pOwner)
+		{
+			info.pOwner = this;
+
+			// NOTE: currently only caching files with GAME pathID
+			FileAsyncRequest_t request;
+			request.pszFilename = info.pFileName;
+			request.pszPathID = "GAME";
+			request.flags = FSASYNC_FLAGS_ALLOCNOFREE;
+			request.pfnCallback = &IOCallback;
+			request.pContext = &info;
+			if (m_pFS->AsyncRead(request, &info.hIOAsync) != FSASYNC_OK)
+			{
+				--m_nPending;
+			}
+		}
+	}
+}
+
+void CBaseFileSystem::CFileCacheObject::IOCallback(const FileAsyncRequest_t& request, int nBytesRead, FSAsyncStatus_t err)
+{
+	Assert(request.pContext);
+	Info_t& info = *(Info_t*)request.pContext;
+
+	CMemoryFileBacking* pBacking = new CMemoryFileBacking(info.pOwner->m_pFS);
+	pBacking->m_pData = NULL;
+	pBacking->m_pFileName = info.pFileName;
+	pBacking->m_nLength = (err == FSASYNC_OK && nBytesRead == 0) ? 0 : -1;
+
+	if (request.pData)
+	{
+		if (err == FSASYNC_OK && nBytesRead > 0)
+		{
+			pBacking->m_pData = (const char*)request.pData; // transfer data ownership
+			pBacking->m_nLength = nBytesRead;
+		}
+		else
+		{
+			info.pOwner->m_pFS->FreeOptimalReadBuffer(request.pData);
+		}
+	}
+
+	CMemoryFileBacking* pExistingBacking = NULL;
+	if (!info.pOwner->m_pFS->RegisterMemoryFile(pBacking, &pExistingBacking))
+	{
+		// Someone already registered this file
+		info.pFileName = pExistingBacking->m_pFileName;
+		pBacking->Release();
+		pBacking = pExistingBacking;
+	}
+
+	//DevWarning("preload %s  %d\n", request.pszFilename, pBacking->m_nLength);
+
+	info.pBacking = pBacking;
+	info.pOwner->m_nPending--;
+}
+
+CBaseFileSystem::CFileCacheObject::~CFileCacheObject()
+{
+	AUTO_LOCK(m_InfosMutex);
+	for (int i = 0; i < m_Infos.Count(); ++i)
+	{
+		Info_t& info = *m_Infos[i];
+		if (info.hIOAsync)
+		{
+			// job is guaranteed to not be running after abort
+			m_pFS->AsyncAbort(info.hIOAsync);
+			m_pFS->AsyncRelease(info.hIOAsync);
+		}
+
+		if (info.pBacking)
+		{
+			m_pFS->UnregisterMemoryFile(info.pBacking);
+			info.pBacking->Release();
+		}
+		else
+		{
+			free((char*)info.pFileName);
+		}
+
+		delete m_Infos[i];
+	}
+	Assert(m_nPending == 0);
 }
 
 static void WhereIsCommand_f(const CCommand &args)

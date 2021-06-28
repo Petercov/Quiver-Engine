@@ -552,7 +552,7 @@ IDirect3DVertexDeclaration9 *FindOrCreateVertexDecl( VertexFormat_t fmt, bool bS
 	Assert( hr == D3D_OK );
 	if ( hr != D3D_OK )
 	{
-		Warning( " ERROR: failed to create vertex decl for vertex format %x! You'll probably see messed-up mesh rendering - to diagnose, build shaderapidx9.dll in debug.\n", (int)fmt );
+		Warning( " ERROR: failed to create vertex decl for vertex format 0x%08llX! You'll probably see messed-up mesh rendering - to diagnose, build shaderapidx9.dll in debug.\n", fmt );
 	}
 
 	s_VertexDeclDict.Insert( lookup );
@@ -568,7 +568,9 @@ void ReleaseAllVertexDecl()
 	int i = s_VertexDeclDict.FirstInorder();
 	while ( i != s_VertexDeclDict.InvalidIndex() )
 	{
-		s_VertexDeclDict[i].m_pDecl->Release();
+		if ( s_VertexDeclDict[i].m_pDecl )
+			s_VertexDeclDict[i].m_pDecl->Release();
 		i = s_VertexDeclDict.NextInorder( i );
 	}
 }
+

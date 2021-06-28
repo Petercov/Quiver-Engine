@@ -55,6 +55,15 @@ enum ShaderBlendFactor_t
 	SHADER_BLEND_ONE_MINUS_SRC_COLOR
 };
 
+enum ShaderBlendOp_t
+{
+	SHADER_BLEND_OP_ADD,
+	SHADER_BLEND_OP_SUBTRACT,
+	SHADER_BLEND_OP_REVSUBTRACT,
+	SHADER_BLEND_OP_MIN,
+	SHADER_BLEND_OP_MAX
+};
+
 enum ShaderAlphaFunc_t
 {
 	SHADER_ALPHAFUNC_NEVER,
@@ -264,6 +273,7 @@ public:
 	// Methods related to alpha blending
 	virtual void EnableBlending( bool bEnable ) = 0;
 	virtual void BlendFunc( ShaderBlendFactor_t srcFactor, ShaderBlendFactor_t dstFactor ) = 0;
+	// More below...
 
 	// Alpha testing
 	virtual void EnableAlphaTest( bool bEnable ) = 0;
@@ -346,6 +356,10 @@ public:
 
 	// Shadow map filtering
 	virtual void SetShadowDepthFiltering( Sampler_t stage ) = 0;
+
+	// More alpha blending state
+	virtual void BlendOp( ShaderBlendOp_t blendOp ) = 0;
+	virtual void BlendOpSeparateAlpha( ShaderBlendOp_t blendOp ) = 0;
 };
 // end class IShaderShadow
 

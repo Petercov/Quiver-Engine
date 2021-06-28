@@ -5,6 +5,7 @@
 //=============================================================================
 
 #include "resource.h"
+#include "platform.h"
 
 #define _WIN32_DCOM
 #include <comdef.h>
@@ -15,10 +16,10 @@
 
 # pragma comment(lib, "wbemuuid.lib")
 
-int GetVidMemBytes( void )
+uint64 GetVidMemBytes( void )
 {
 	static int bBeenHere = false;
-	static int nBytes = 0;
+	static uint64 nBytes = 0;
 
 	if( bBeenHere )
 	{
@@ -177,7 +178,8 @@ int GetVidMemBytes( void )
         hr = pclsObj->Get(L"AdapterRAM", 0, &vtProp, 0, 0);
 		if ( SUCCEEDED( hr ) )
 		{
-			nBytes = vtProp.intVal; // Video RAM in bytes
+			nBytes = vtProp.ulVal; // Video RAM in bytes, AdatperRam is returned as the I4 type so we read it out as unsigned int, 
+								   // see http://msdn.microsoft.com/en-us/library/windows/desktop/aa394512(v=vs.85).aspx
 		}
 
         VariantClear(&vtProp);
@@ -187,7 +189,10 @@ int GetVidMemBytes( void )
     pSvc->Release();
     pLoc->Release();
     pEnumerator->Release();
-    pclsObj->Release();
+	if ( pclsObj )
+	{
+		pclsObj->Release();
+	}
     CoUninitialize();
 
 	return nBytes;

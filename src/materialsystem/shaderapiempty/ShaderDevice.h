@@ -202,6 +202,13 @@ public:
     */
 	virtual void RefreshFrontBufferNonInteractive( ) {}
 
+    virtual void HandleThreadEvent(uint32 threadEvent) {}
+
+#ifdef DX_TO_GL_ABSTRACTION
+    virtual void DoStartupShaderPreloading(void) = 0;
+#endif
+    virtual char* GetDisplayDeviceName() { return "Empty"; }
+
 private:
 	CMesh m_Mesh;
 	CMesh m_DynamicMesh;

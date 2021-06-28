@@ -39,7 +39,7 @@
 //-----------------------------------------------------------------------------
 extern IMaterialSystemHardwareConfig *g_pHardwareConfig;
 extern const MaterialSystem_Config_t *g_pConfig;
-
+extern bool g_shaderConfigDumpEnable;
 
 // Helper method
 bool IsUsingGraphics();
@@ -81,6 +81,12 @@ inline bool CShader_IsFlagSet( IMaterialVar **params, MaterialVarFlags_t _flag )
 	if ( ( nParamIndex != -1 ) && ( !params[nParamIndex]->IsDefined() ) ) \
 	{																	  \
 		params[nParamIndex]->SetStringValue( kDefaultValue );			  \
+	}
+
+#define SET_PARAM_INT_IF_NOT_DEFINED( nParamIndex, kDefaultValue )			\
+	if ( ( nParamIndex != -1 ) && ( !params[nParamIndex]->IsDefined() ) )	\
+	{																		\
+		params[nParamIndex]->SetIntValue( kDefaultValue );					\
 	}
 
 #define SET_PARAM_FLOAT_IF_NOT_DEFINED( nParamIndex, kDefaultValue )      \
@@ -186,8 +192,18 @@ inline bool CShader_IsFlag2Set( IMaterialVar **params, MaterialVarFlags2_t _flag
 	static CShaderParam param( "$" #param, paramtype, paramdefault, paramhelp, flags );
 
 #define SHADER_PARAM_OVERRIDE( param, paramtype, paramdefault, paramhelp, flags ) \
-	static CShaderParam param( (ShaderMaterialVars_t)param, paramtype, paramdefault, paramhelp, flags );
+	static CShaderParam param( (ShaderMaterialVars_t) ::param, paramtype, paramdefault, paramhelp, flags );
 
+	// regarding the macro above: the "::" was added to the first argument in order to disambiguate it for GCC.
+	// for example, in cloak.cpp, this usage appears:
+	// 		SHADER_PARAM_OVERRIDE( COLOR, SHADER_PARAM_TYPE_COLOR, "{255 255 255}", "unused", SHADER_PARAM_NOT_EDITABLE )
+	// which in turn tries to ask the compiler to instantiate an object like so:
+	// 		static CShaderParam COLOR( (ShaderMaterialVars_t)COLOR, SHADER_PARAM_TYPE_COLOR, "{255 255 255}", "unused", SHADER_PARAM_NOT_EDITABLE )
+	// and GCC thinks that the reference to COLOR in the arg list is actually a reference to the object we're in the middle of making.
+	// and you get --> error: invalid cast from type ‘Cloak_DX90::CShaderParam’ to type ‘ShaderMaterialVars_t’
+	// Resolved: add the "::" so compiler knows that reference is to the enum, not to the name of the object being made.
+	
+	
 #define END_SHADER_PARAMS \
 	class CShader : public CBaseClass\
 	{\
@@ -296,10 +312,12 @@ inline bool CShader_IsFlag2Set( IMaterialVar **params, MaterialVarFlags2_t _flag
 // FIXME: There's a compiler bug preventing this from working. 
 // Maybe it'll work under VC7!
 
+/*
 //#define BEGIN_INHERITED_SHADER( name, _baseclass, help ) \
 //	namespace _baseclass \
 //	{\
 //	__BEGIN_SHADER_INTERNAL( _baseclass::CShader, name, help )
+*/
 
 //#define END_INHERITED_SHADER END_SHADER }
 

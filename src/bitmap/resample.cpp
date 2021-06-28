@@ -845,5 +845,75 @@ void GenerateMipmapLevels( unsigned char* pSrc, unsigned char* pDst, int width,
 	}
 }
 
+void GenerateMipmapLevelsLQ(unsigned char* pSrc, unsigned char* pDst, int width, int height,
+	ImageFormat imageFormat, int numLevels)
+{
+	CUtlMemory<unsigned char> tmpImage;
+
+	const unsigned char* pSrcLevel = pSrc;
+
+	int mipmap0Size = GetMemRequired(width, height, 1, IMAGE_FORMAT_RGBA8888, false);
+
+	// TODO: Could work with any 8888 format without conversion.
+	if (imageFormat != IMAGE_FORMAT_RGBA8888)
+	{
+		// Damn and blast, had to allocate memory.
+		tmpImage.EnsureCapacity(mipmap0Size);
+		ConvertImageFormat(tmpImage.Base(), IMAGE_FORMAT_RGBA8888, pSrc, imageFormat, width, height, 0, 0);
+		pSrcLevel = tmpImage.Base();
+	}
+
+	// Copy the 0th level over.
+	memcpy(pDst, pSrcLevel, mipmap0Size);
+
+	int dstWidth = width;
+	int dstHeight = height;
+	unsigned char* pDstLevel = pDst + mipmap0Size;
+
+	int srcWidth = width;
+	int srcHeight = height;
+
+	// Distance from one pixel to the next
+	const int cStride = 4;
+
+	do
+	{
+		dstWidth = Max(1, dstWidth >> 1);
+		dstHeight = Max(1, dstHeight >> 1);
+
+		// Distance from one row to the next. 
+		const int cSrcPitch = cStride * srcWidth * (srcHeight > 1 ? 1 : 0);
+		const int cSrcStride = srcWidth > 1 ? cStride : 0;
+
+		const unsigned char* pSrcPixel = pSrcLevel;
+		unsigned char* pDstPixel = pDstLevel;
+
+		for (int j = 0; j < dstHeight; ++j)
+		{
+			for (int i = 0; i < dstWidth; ++i)
+			{
+				// This doesn't round. It's crappy. It's a simple bilerp. 
+				pDstPixel[0] = ((unsigned int)pSrcPixel[0] + (unsigned int)pSrcPixel[0 + cSrcStride] + (unsigned int)pSrcPixel[0 + cSrcPitch] + (unsigned int)pSrcPixel[0 + cSrcPitch + cSrcStride]) >> 2;
+				pDstPixel[1] = ((unsigned int)pSrcPixel[1] + (unsigned int)pSrcPixel[1 + cSrcStride] + (unsigned int)pSrcPixel[1 + cSrcPitch] + (unsigned int)pSrcPixel[1 + cSrcPitch + cSrcStride]) >> 2;
+				pDstPixel[2] = ((unsigned int)pSrcPixel[2] + (unsigned int)pSrcPixel[2 + cSrcStride] + (unsigned int)pSrcPixel[2 + cSrcPitch] + (unsigned int)pSrcPixel[2 + cSrcPitch + cSrcStride]) >> 2;
+				pDstPixel[3] = ((unsigned int)pSrcPixel[3] + (unsigned int)pSrcPixel[3 + cSrcStride] + (unsigned int)pSrcPixel[3 + cSrcPitch] + (unsigned int)pSrcPixel[3 + cSrcPitch + cSrcStride]) >> 2;
+
+				pDstPixel += cStride;
+				pSrcPixel += cStride * 2; // We advance 2 source pixels for each pixel.
+			}
+
+			// Need to bump down a row. 
+			pSrcPixel += cSrcPitch;
+		}
+
+		// Update for the next go round!
+		pSrcLevel = pDstLevel;
+		pDstLevel += GetMemRequired(dstWidth, dstHeight, 1, IMAGE_FORMAT_RGBA8888, false);
+
+		srcWidth = Max(1, srcWidth >> 1);
+		srcHeight = Max(1, srcHeight >> 1);
+	} while (srcWidth > 1 || srcHeight > 1);
+}
+
 } // ImageLoader namespace ends
 

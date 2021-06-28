@@ -1187,6 +1187,28 @@ struct CPUInformation
 // extern "C" implied by PLATFORM_INTERFACE.
 PLATFORM_INTERFACE const CPUInformation* GetCPUInformation();
 
+#define MEMORY_INFORMATION_VERSION 0
+
+struct MemoryInformation
+{
+	int m_nStructVersion;
+
+	uint m_nPhysicalRamMbTotal;
+	uint m_nPhysicalRamMbAvailable;
+
+	uint m_nVirtualRamMbTotal;
+	uint m_nVirtualRamMbAvailable;
+
+	inline MemoryInformation()
+	{
+		memset(this, 0, sizeof(*this));
+		m_nStructVersion = MEMORY_INFORMATION_VERSION;
+	}
+};
+
+// Returns true if the passed in MemoryInformation structure was filled out, otherwise false.
+PLATFORM_INTERFACE bool GetMemoryInformation(MemoryInformation* pOutMemoryInfo);
+
 PLATFORM_INTERFACE float GetCPUUsage();
 
 PLATFORM_INTERFACE void GetCurrentDate( int *pDay, int *pMonth, int *pYear );

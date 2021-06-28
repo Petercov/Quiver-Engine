@@ -361,7 +361,7 @@ private:
 class CMorphMgrRenderContext : public IMorphMgrRenderContext
 {
 public:
-	enum
+	enum UnnamedEnumsAreNotLegal
 	{
 		MAX_MODEL_MORPHS = 4,
 	};
@@ -797,7 +797,7 @@ void CMorph::DisplayMorphStats()
 	int nDestTextureHeight = pDest->GetActualHeight();
 
 #ifdef _DEBUG
-	Msg( "Morph %s:\n", m_pDebugName );
+	Msg( "Morph %s:\n", m_pDebugName.Get() );
 #else
 	Msg( "Morph :\n" );
 #endif
@@ -1772,7 +1772,6 @@ void CMorphMgr::AllocateMaterials()
 	pVMTKeyValues->SetString( "$nocull", "1" );
 	pVMTKeyValues->SetString( "$ignorez", "1" );
 	m_pVisualizeMorphAccum = g_pMaterialSystem->CreateMaterial( "___visualizeMorphAccum.vmt", pVMTKeyValues );
-	m_pVisualizeMorphAccum->IncrementReferenceCount();
 
 	if ( !m_bUsingConstantRegisters )
 	{
@@ -1781,14 +1780,12 @@ void CMorphMgr::AllocateMaterials()
 		pVMTKeyValues->SetString( "$nocull", "1" );
 		pVMTKeyValues->SetString( "$ignorez", "1" );
 		m_pRenderMorphWeight = g_pMaterialSystem->CreateMaterial( "___morphweight.vmt", pVMTKeyValues );
-		m_pRenderMorphWeight->IncrementReferenceCount();
 
 		pVMTKeyValues = new KeyValues( "debugmorphaccumulator" );
 		pVMTKeyValues->SetString( "$basetexture", "_rt_MorphWeight" );
 		pVMTKeyValues->SetString( "$nocull", "1" );
 		pVMTKeyValues->SetString( "$ignorez", "1" );
 		m_pVisualizeMorphWeight = g_pMaterialSystem->CreateMaterial( "___visualizeMorphWeight.vmt", pVMTKeyValues );
-		m_pVisualizeMorphWeight->IncrementReferenceCount();
 	}
 }
 

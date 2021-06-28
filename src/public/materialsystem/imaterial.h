@@ -387,10 +387,11 @@ enum MaterialVarFlags_t
 	MATERIAL_VAR_HALFLAMBERT			  = (1 << 27),
 	MATERIAL_VAR_WIREFRAME                = (1 << 28),
 	MATERIAL_VAR_ALLOWALPHATOCOVERAGE     = (1 << 29),
+	MATERIAL_VAR_IGNORE_ALPHA_MODULATION  = (1 << 30),
 
 	// NOTE: Only add flags here that either should be read from
 	// .vmts or can be set directly from client code. Other, internal
-	// flags should to into the flag enum in IMaterialInternal.h
+	// flags should to into the flag enum in imaterialinternal.h
 };
 
 
@@ -597,9 +598,13 @@ public:
 
 	virtual void			CallBindProxy( void *proxyData ) = 0;
 
+	virtual IMaterial		*CheckProxyReplacement( void *proxyData ) = 0;
+
 	virtual void			RefreshPreservingMaterialVars() = 0;
 
 	virtual bool			WasReloadedFromWhitelist() = 0;
+
+	virtual bool			IsPrecached() const = 0;
 };
 
 
@@ -607,6 +612,5 @@ inline bool IsErrorMaterial( IMaterial *pMat )
 {
 	return !pMat || pMat->IsErrorMaterial();
 }
-
 
 #endif // IMATERIAL_H

@@ -322,6 +322,11 @@ public:
 		m_pD3DDevice = pD3DDev;
 	}
 
+	IDirect3DDevice9* GetDevicePtr()
+	{
+		return m_pD3DDevice;
+	}
+
 	void ShutDownDevice(void)
 	{
 		if ( ASyncMode() )
@@ -552,6 +557,17 @@ public:
 														pSharedHandle );
 	}
 
+	HRESULT UpdateSurface(IDirect3DSurface9* pSourceSurface, CONST RECT* pSourceRect, IDirect3DSurface9* pDestinationSurface, CONST POINT* pDestPoint)
+	{
+		Synchronize();
+		return m_pD3DDevice->UpdateSurface(pSourceSurface, pSourceRect, pDestinationSurface, pDestPoint);
+	}
+
+	HRESULT UpdateTexture(IDirect3DBaseTexture9* pSourceTexture, IDirect3DBaseTexture9* pDestinationTexture)
+	{
+		Synchronize();
+		return m_pD3DDevice->UpdateTexture(pSourceTexture, pDestinationTexture);
+	}
 
 	FORCEINLINE void SetRenderTarget( int idx, IDirect3DSurface9 *new_rt )
 	{

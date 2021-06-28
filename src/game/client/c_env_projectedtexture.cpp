@@ -317,9 +317,9 @@ void C_EnvProjectedTexture::UpdateLight( void )
 		state.m_NearZ = m_flNearZ;
 		state.m_FarZ = m_flFarZ;
 		//state.m_flShadowSlopeScaleDepthBias = mat_slopescaledepthbias_shadowmap.GetFloat();
-		state.m_flShadowSlopeScaleDepthBias = g_pMaterialSystemHardwareConfig->GetShadowSlopeScaleDepthBias();
+		//state.m_flShadowSlopeScaleDepthBias = g_pMaterialSystemHardwareConfig->GetShadowSlopeScaleDepthBias();
 		//state.m_flShadowDepthBias = mat_depthbias_shadowmap.GetFloat();
-		state.m_flShadowDepthBias = g_pMaterialSystemHardwareConfig->GetShadowDepthBias();
+		//state.m_flShadowDepthBias = g_pMaterialSystemHardwareConfig->GetShadowDepthBias();
 		state.m_bEnableShadows = m_bEnableShadows;
 		//state.m_pSpotlightTexture = materials->FindTexture( m_SpotlightTextureName, TEXTURE_GROUP_OTHER, false );
 		state.m_pSpotlightTexture = m_SpotlightTexture;

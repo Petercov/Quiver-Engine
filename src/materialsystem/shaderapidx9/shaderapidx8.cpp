@@ -84,6 +84,7 @@ mat_fullbright 1 doesn't work properly on alpha materials in testroom_standards
 #include "tier2/tier2.h"
 #include "materialsystem/deformations.h"
 #include "bitmap/tgawriter.h"
+#include "tier0/icommandline.h"
 
 #if defined( _X360 )
 #include "xbox/xbox_console.h"
@@ -167,6 +168,8 @@ struct SamplerState_t
 	D3DTEXTUREFILTERTYPE		m_MagFilter;
 	D3DTEXTUREFILTERTYPE		m_MinFilter;
 	D3DTEXTUREFILTERTYPE		m_MipFilter;
+	int							m_FinestMipmapLevel;
+	float						m_LodBias;
 	int							m_nAnisotropicLevel;
 	bool						m_TextureEnable;
 	bool						m_SRGBReadEnable;
@@ -378,7 +381,7 @@ enum CommitShaderType_t
 	}
 
 #define ADD_VERTEX_TEXTURE_FUNC( _func, _shader, _func_name, _stage, _state, _val )	\
-	Assert( _stage < MAX_VERTEX_TEXTURE_COUNT );							\
+	Assert( (int)_stage < MAX_VERTEX_TEXTURE_COUNT );							\
 	if ( m_bResettingRenderState || (m_DesiredState.m_VertexTextureState[_stage]. ## _state != _val) )	\
 	{																		\
 		m_DesiredState.m_VertexTextureState[_stage]. ## _state = _val;		\
@@ -417,9 +420,13 @@ struct Texture_t
 		m_CountIndex = 0;
 		m_nTimesBoundMax = 0;
 		m_nTimesBoundThisFrame = 0;
+		m_pTexture = NULL;
+		m_ppTexture = NULL;
 		m_ImageFormat = IMAGE_FORMAT_RGBA8888;
 		m_pTextureGroupCounterGlobal = NULL;
 		m_pTextureGroupCounterFrame = NULL;
+		m_FinestMipmapLevel = 0;
+		m_LodBias = 0.0f;
 	}
 
 	// FIXME: Compress this info
@@ -429,6 +436,8 @@ struct Texture_t
 	D3DTEXTUREFILTERTYPE	m_MagFilter;
 	D3DTEXTUREFILTERTYPE	m_MinFilter;
 	D3DTEXTUREFILTERTYPE	m_MipFilter;
+	int						m_FinestMipmapLevel;
+	float					m_LodBias;
 
 	unsigned char			m_NumLevels;
 	unsigned char			m_SwitchNeeded;	// Do we need to advance the current copy?
@@ -455,6 +464,7 @@ struct Texture_t
 		IS_DEPTH_STENCIL         = 0x0002,
 		IS_DEPTH_STENCIL_TEXTURE = 0x0004,	// depth stencil texture, not surface
 		IS_RENDERABLE            = ( IS_DEPTH_STENCIL | IS_ALLOCATED ),
+		IS_LOCKABLE				 = 0x0008,
 		IS_FINALIZED             = 0x0010,	// 360: completed async hi-res load
 		IS_FAILED                = 0x0020,	// 360: failed during load
 		CAN_CONVERT_FORMAT       = 0x0040,	// 360: allow format conversion
@@ -533,6 +543,11 @@ struct Texture_t
 	int GetDepth() const
 	{
 		return ( int )m_Depth;
+	}
+
+	int GetLodClamp() const
+	{
+		return m_FinestMipmapLevel;
 	}
 
 	void SetImageFormat( ImageFormat format )
@@ -629,7 +644,7 @@ public:
 	//
 
 	// Sets the mode...
-	bool SetMode( void* hwnd, int nAdapter, const ShaderDeviceInfo_t &info );
+	bool SetMode( void* VD3DHWND, int nAdapter, const ShaderDeviceInfo_t &info );
 
 	// Change the video mode after it's already been set.
 	void ChangeVideoMode( const ShaderDeviceInfo_t &info );
@@ -711,6 +726,9 @@ public:
 	// Turns off Z buffering
 	void OverrideDepthEnable( bool bEnable, bool bDepthEnable );
 
+	void OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable );
+	void OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable );
+
 	void SetHeightClipZ( float z );
 	void SetHeightClipMode( enum MaterialHeightClipMode_t heightClipMode );
 
@@ -770,7 +788,7 @@ public:
 	void InvalidateDelayedShaderConstants( void );
 
 	// Returns the nearest supported format
-	ImageFormat GetNearestSupportedFormat( ImageFormat fmt ) const;
+	ImageFormat GetNearestSupportedFormat( ImageFormat fmt, bool bFilteringRequired = true ) const;
 	ImageFormat GetNearestRenderTargetFormat( ImageFormat format ) const;
 	virtual bool DoRenderTargetsNeedSeparateDepthBuffer() const;
 
@@ -814,6 +832,8 @@ public:
 	void TexMagFilter( ShaderTexFilterMode_t texFilterMode );
 	void TexWrap( ShaderTexCoordComponent_t coord, ShaderTexWrapMode_t wrapMode );
 	void TexSetPriority( int priority );
+	void TexLodClamp( int finest );
+	void TexLodBias( float bias );
 
 	ShaderAPITextureHandle_t CreateTextureHandle( void );
 	void CreateTextureHandles( ShaderAPITextureHandle_t *handles, int count );
@@ -874,12 +894,15 @@ public:
 		bool bSrcIsTiled,
 		void *imageData );
 
+	void TexImageFromVTF( IVTFTexture *pVTF, int iVTFFrame );
+
 	bool TexLock( int level, int cubeFaceID, int xOffset, int yOffset, int width, int height, CPixelWriter& writer );
 	void TexUnlock( );
 
 	// stuff that isn't to be used from within a shader
 	// what's the best way to hide this? subclassing?
 	virtual void ClearBuffersObeyStencil( bool bClearColor, bool bClearDepth );
+	virtual void ClearBuffersObeyStencilEx( bool bClearColor, bool bClearAlpha, bool bClearDepth );
 	virtual void PerformFullScreenStencilOperation( void );
 	void ReadPixels( int x, int y, int width, int height, unsigned char *data, ImageFormat dstFormat );
 	virtual void ReadPixels( Rect_t *pSrcRect, Rect_t *pDstRect, unsigned char *data, ImageFormat dstFormat, int nDstStride );
@@ -992,6 +1015,13 @@ public:
 
 	void CopyRenderTargetToTexture( ShaderAPITextureHandle_t textureHandle );
 	void CopyRenderTargetToTextureEx( ShaderAPITextureHandle_t textureHandle, int nRenderTargetID, Rect_t *pSrcRect = NULL, Rect_t *pDstRect = NULL );
+	void CopyTextureToRenderTargetEx( int nRenderTargetID, ShaderAPITextureHandle_t textureHandle, Rect_t *pSrcRect = NULL, Rect_t *pDstRect = NULL );
+	void CopyRenderTargetToScratchTexture( ShaderAPITextureHandle_t srcHandle, ShaderAPITextureHandle_t dstHandle, Rect_t *pSrcRect = NULL, Rect_t *pDstRect = NULL );
+
+	virtual void LockRect( void** pOutBits, int* pOutPitch, ShaderAPITextureHandle_t texHandle, int mipmap, int x, int y, int w, int h, bool bWrite, bool bRead );
+	virtual void UnlockRect( ShaderAPITextureHandle_t texHandle, int mipmap );
+
+	virtual void CopyTextureToTexture( ShaderAPITextureHandle_t srcTex, ShaderAPITextureHandle_t dstTex );
 
 	// Returns the cull mode (for fill rate computation)
 	D3DCULL GetCullMode() const;
@@ -1041,6 +1071,7 @@ public:
 
 	void ForceHardwareSync_WithManagedTexture();
 	void ForceHardwareSync( void );
+	void UpdateFrameSyncQuery( int queryIndex, bool bIssue );
 
 	void EvictManagedResources();
 
@@ -1144,6 +1175,8 @@ public:
 	virtual void HandleDeviceLost();
 
 	virtual void EnableLinearColorSpaceFrameBuffer( bool bEnable );
+
+	virtual void SetPSNearAndFarZ( int pshReg );
 
 	// stencil methods
 	void SetStencilEnable(bool onoff);
@@ -1547,6 +1580,10 @@ private:
 #ifndef _X360
 	D3DDeviceWrapper	m_DeviceWrapper;
 #endif
+	// debug logging
+	void PrintfVA( char *fmt, va_list vargs );
+	void Printf( const char *fmt, ... );	
+	float Knob( char *knobname, float *setvalue = NULL );
 
 	// "normal" back buffer and depth buffer.  Need to keep this around so that we
 	// know what to set the render target to when we are done rendering to a texture.
@@ -1703,7 +1740,6 @@ private:
 	// Vendor-dependent depth stencil texture format
 	ImageFormat GetShadowDepthTextureFormat( void );
 
-	bool SupportsNormalMapCompression( void ) const;
 	bool SupportsBorderColor( void ) const;
 	bool SupportsFetch4( void ) const;
 	
@@ -1766,6 +1802,10 @@ private:
 
 	bool m_bGPUOwned;
 	bool m_bResetRenderStateNeeded;
+
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+	bool m_NullDevice;
+#endif
 };
 
 
@@ -1798,6 +1838,7 @@ D3DDeviceWrapper *Dx9Device()
 
 // Pix wants a max of 32 characters
 // We'll give it the right-most substrings separated by slashes
+static char s_pPIXMaterialName[32];
 void PIXifyName( char *pDst, int destSize, const char *pSrc )
 {
 	char *pSrcWalk = (char *)pSrc;
@@ -1813,6 +1854,34 @@ void PIXifyName( char *pDst, int destSize, const char *pSrc )
 	}
 
 	V_strncpy( pDst, pSrcWalk, min( 32, destSize ) );
+}
+
+static int AdjustUpdateRange( float const* pVec, void const *pOut, int numVecs, int* pSkip )
+{
+	int skip = 0;
+	uint32* pSrc = (uint32*)pVec;
+	uint32* pDst = (uint32*)pOut;
+	while( numVecs && !( ( pSrc[0] ^ pDst[0] ) | ( pSrc[1] ^ pDst[1] ) | ( pSrc[2] ^ pDst[2] ) | ( pSrc[3] ^ pDst[3] ) ) )
+	{
+		pSrc += 4;
+		pDst += 4;
+		numVecs--;
+		skip++;
+	}
+	*pSkip = skip;
+	if ( !numVecs )
+		return 0;
+
+	uint32* pSrcLast = pSrc + numVecs * 4 - 4;
+	uint32* pDstLast = pDst + numVecs * 4 - 4;
+	while( numVecs > 1 && !( ( pSrcLast[0] ^ pDstLast[0] ) | ( pSrcLast[1] ^ pDstLast[1] ) | ( pSrcLast[2] ^ pDstLast[2] ) | ( pSrcLast[3] ^ pDstLast[3] ) ) )
+	{
+		pSrcLast -= 4;
+		pDstLast -= 4;
+		numVecs--;
+	}
+
+	return numVecs;
 }
 
 //-----------------------------------------------------------------------------
@@ -1892,6 +1961,11 @@ CShaderAPIDx8::CShaderAPIDx8() :
 	m_MaxIntegerPixelShaderConstant = 0;
 
 	ClearStdTextureHandles();
+	
+	//Debugger();
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+	m_NullDevice = !!CommandLine()->FindParm( "-nulldevice" );
+#endif
 }
 
 CShaderAPIDx8::~CShaderAPIDx8()
@@ -1957,6 +2031,12 @@ bool CShaderAPIDx8::OnAdapterSet()
 
 	// Modify the caps based on requested DXlevels
 	int nForcedDXLevel = CommandLine()->ParmValue( "-dxlevel", 0 );
+	
+	if ( nForcedDXLevel > 0 )
+	{
+		nForcedDXLevel = MAX( nForcedDXLevel, ABSOLUTE_MINIMUM_DXLEVEL );
+	}
+	
 
 	// FIXME: Check g_pHardwareConfig->ActualCaps() for a preferred DX level
 	OverrideCaps( nForcedDXLevel );
@@ -1997,7 +2077,12 @@ void CShaderAPIDx8::AcquireInternalRenderTargets()
 	if ( !m_pBackBufferSurface )
 	{
 		Dx9Device()->GetRenderTarget( 0, &m_pBackBufferSurface );
-		Assert( m_pBackBufferSurface );
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+		if( !m_NullDevice )
+#endif
+		{
+			Assert( m_pBackBufferSurface );
+		}
 	}
 
 #if defined( _X360 )
@@ -2011,7 +2096,11 @@ void CShaderAPIDx8::AcquireInternalRenderTargets()
 	}
 #endif
 
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+	if ( !m_pZBufferSurface && !m_NullDevice )
+#else
 	if ( !m_pZBufferSurface )
+#endif
 	{
 		Dx9Device()->GetDepthStencilSurface( &m_pZBufferSurface );
 		Assert( m_pZBufferSurface );
@@ -2320,7 +2409,7 @@ void CShaderAPIDx8::OnDeviceShutdown()
 //-----------------------------------------------------------------------------
 // Sets the mode...
 //-----------------------------------------------------------------------------
-bool CShaderAPIDx8::SetMode( void* hWnd, int nAdapter, const ShaderDeviceInfo_t &info )
+bool CShaderAPIDx8::SetMode( void* VD3DHWND, int nAdapter, const ShaderDeviceInfo_t &info )
 {
 	//
 	// FIXME: Note that this entire function is backward compat and will go soon
@@ -2348,7 +2437,7 @@ bool CShaderAPIDx8::SetMode( void* hWnd, int nAdapter, const ShaderDeviceInfo_t 
 	static bool bSetModeOnce = false;
 	if ( !bSetModeOnce )
 	{
-		nDXLevel = CommandLine()->ParmValue( "-dxlevel", nDXLevel );
+		nDXLevel = MAX( ABSOLUTE_MINIMUM_DXLEVEL, CommandLine()->ParmValue( "-dxlevel", nDXLevel ) );
 		bSetModeOnce = true;
 	}
 	if ( nDXLevel > actualCaps.m_nMaxDXSupportLevel )
@@ -2363,7 +2452,7 @@ bool CShaderAPIDx8::SetMode( void* hWnd, int nAdapter, const ShaderDeviceInfo_t 
 	g_pShaderAPI = this;
 	g_pShaderDevice = this;
 	g_pShaderShadow = ShaderShadow();
-	bool bOk = InitDevice( hWnd, nAdapter, actualInfo );
+	bool bOk = InitDevice( VD3DHWND, nAdapter, actualInfo );
 	if ( !bOk )
 		return false;
 
@@ -2634,7 +2723,7 @@ inline void CShaderAPIDx8::SetRenderState( D3DRENDERSTATETYPE state, DWORD val, 
 	}
 #	endif
 
-	Assert( state >= 0 && state < MAX_NUM_RENDERSTATES );
+	Assert( state >= 0 && ( int )state < MAX_NUM_RENDERSTATES );
 	if ( m_DynamicState.m_RenderState[state] != val )
 	{
 		if ( bFlushIfChanged )
@@ -2787,19 +2876,7 @@ void CShaderAPIDx8::SetStandardVertexShaderConstants( float fOverbright )
 
 	int nModelIndex = g_pHardwareConfig->Caps().m_nDXSupportLevel < 90 ? VERTEX_SHADER_MODEL - 10 : VERTEX_SHADER_MODEL;
 
-	// These point to the lighting and the transforms
-	standardVertexShaderConstant.Init( 
-		VERTEX_SHADER_LIGHTS,
-		VERTEX_SHADER_LIGHTS + 5, 
-        // Use COLOR instead of UBYTE4 since Geforce3 does not support it
-        // vConst.w should be 3, but due to about hack, mul by 255 and add epsilon
-		// 360 supports UBYTE4, so no fixup required
-		(IsPC() || !IsX360()) ? 765.01f : 3.0f,
-		 nModelIndex );	// DX8 has different constant packing
-
-	SetVertexShaderConstant( VERTEX_SHADER_LIGHT_INDEX, standardVertexShaderConstant.Base(), 1 );
-
-	/*
+/*
 	if ( g_pHardwareConfig->Caps().m_SupportsVertexShaders_3_0 )
 	{
 		Vector4D factors[4];
@@ -2811,8 +2888,25 @@ void CShaderAPIDx8::SetStandardVertexShaderConstants( float fOverbright )
 	}
 */
 
-	float c[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-	SetVertexShaderConstant( VERTEX_SHADER_FLEXSCALE, c, 1 );
+	if ( g_pHardwareConfig->Caps().m_SupportsVertexShaders_2_0 )
+	{
+		float c[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+		SetVertexShaderConstant( VERTEX_SHADER_FLEXSCALE, c, 1 );
+	}
+	else
+	{
+		// These point to the lighting and the transforms
+		standardVertexShaderConstant.Init( 
+			VERTEX_SHADER_LIGHTS,
+			VERTEX_SHADER_LIGHTS + 5, 
+			// Use COLOR instead of UBYTE4 since Geforce3 does not support it
+			// vConst.w should be 3, but due to about hack, mul by 255 and add epsilon
+			// 360 supports UBYTE4, so no fixup required
+			(IsPC() || !IsX360()) ? 765.01f : 3.0f,
+			nModelIndex );	// DX8 has different constant packing
+
+		SetVertexShaderConstant( VERTEX_SHADER_LIGHT_INDEX, standardVertexShaderConstant.Base(), 1 );
+	}
 }
 
 //-----------------------------------------------------------------------------
@@ -3173,7 +3267,7 @@ void CShaderAPIDx8::ResetDXRenderState( void )
     SetSupportedRenderStateForce( D3DRS_CLIPPLANEENABLE, 0 );
 	if ( IsPC() )
 	{	
-		if ( g_pHardwareConfig->Caps().m_bNeedsATICentroidHack )
+		if ( g_pHardwareConfig->Caps().m_bNeedsATICentroidHack && ( g_pHardwareConfig->Caps().m_VendorID == VENDORID_ATI ) )
 		{
 			SetSupportedRenderStateForce( D3DRS_POINTSIZE, MAKEFOURCC( 'C', 'E', 'N', 'T' ) );
 		}
@@ -3292,7 +3386,13 @@ void CShaderAPIDx8::ResetRenderState( bool bFullReset )
 { 
 	LOCK_SHADERAPI();
 	RECORD_DEBUG_STRING( "BEGIN ResetRenderState" );
-	
+
+	if ( !CanDownloadTextures() )
+	{
+		QueueResetRenderState();
+		return;
+	}
+
 	m_bResettingRenderState = true;
 
 	OwnGPUResources( true );
@@ -3350,7 +3450,7 @@ void CShaderAPIDx8::ResetRenderState( bool bFullReset )
 
 	// Fog
 	m_VertexShaderFogParams[0] = m_VertexShaderFogParams[1] = 0.0f;
-	m_WorldSpaceCameraPositon.Init( 0, 0, 0, 0 );
+	m_WorldSpaceCameraPositon.Init( 0, 0, 0.01f, 0 ); // Don't let z be zero, as some pixel shaders will divide by this
 	m_DynamicState.m_FogColor = 0xFFFFFFFF;
 	m_DynamicState.m_PixelFogColor[0] = m_DynamicState.m_PixelFogColor[1] = 
 		m_DynamicState.m_PixelFogColor[2] = m_DynamicState.m_PixelFogColor[3] = 0.0f;
@@ -3435,6 +3535,8 @@ void CShaderAPIDx8::ResetRenderState( bool bFullReset )
 		SamplerState(i).m_MagFilter = D3DTEXF_POINT;
 		SamplerState(i).m_MinFilter = D3DTEXF_POINT;
 		SamplerState(i).m_MipFilter = D3DTEXF_NONE;
+		SamplerState(i).m_FinestMipmapLevel = 0;
+		SamplerState(i).m_LodBias = 0.0f;
 		SamplerState(i).m_TextureEnable = false;
 		SamplerState(i).m_SRGBReadEnable = false;
 
@@ -3447,6 +3549,8 @@ void CShaderAPIDx8::ResetRenderState( bool bFullReset )
 		SetSamplerState( i, D3DSAMP_MINFILTER, SamplerState(i).m_MinFilter );
 		SetSamplerState( i, D3DSAMP_MAGFILTER, SamplerState(i).m_MagFilter );
 		SetSamplerState( i, D3DSAMP_MIPFILTER, SamplerState(i).m_MipFilter );
+		SetSamplerState( i, D3DSAMP_MAXMIPLEVEL, SamplerState(i).m_FinestMipmapLevel );
+		SetSamplerState( i, D3DSAMP_MIPMAPLODBIAS, SamplerState(i).m_LodBias );
 
 		SetSamplerState( i, D3DSAMP_BORDERCOLOR, RGB( 0,0,0 ) );
 	}
@@ -3843,6 +3947,9 @@ void CShaderAPIDx8::ForceHardwareSync_WithManagedTexture()
 	SetDefaultState();
 
 	D3DLOCKED_RECT rect;
+
+	tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "%s", __FUNCTION__ );
+
 	HRESULT hr = m_pFrameSyncTexture->LockRect( 0, &rect, NULL, 0 );
 	if ( SUCCEEDED( hr ) )
 	{
@@ -3870,6 +3977,8 @@ void CShaderAPIDx8::ForceHardwareSync_WithManagedTexture()
 				unsigned short indices[3] = { 0, 1, 2 };
 				Vector verts[3] = {vec3_origin, vec3_origin, vec3_origin};
 				
+				tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "DrawIndexedPrimitiveUP" );
+
 				Dx9Device()->DrawIndexedPrimitiveUP(
 					D3DPT_TRIANGLELIST,
 					0,				// Min vertex index
@@ -3888,6 +3997,53 @@ void CShaderAPIDx8::ForceHardwareSync_WithManagedTexture()
 	}
 	// If this assert fails, then we failed somewhere above.
 	AssertOnce( SUCCEEDED( hr ) );
+}
+
+void CShaderAPIDx8::UpdateFrameSyncQuery( int queryIndex, bool bIssue )
+{
+	Assert(queryIndex < NUM_FRAME_SYNC_QUERIES);
+	// wait if already issued
+	if ( m_bQueryIssued[queryIndex] )
+	{
+		tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "%s", __FUNCTION__ );
+
+		double flStartTime = Plat_FloatTime();
+		BOOL dummyData = 0;
+		HRESULT hr = S_OK;
+		// NOTE: This fix helps out motherboards that are a little freaky.
+		// On such boards, sometimes the driver has to reset itself (an event which takes several seconds)
+		// and when that happens, the frame sync query object gets lost
+		for (;;)
+		{
+			hr = m_pFrameSyncQueryObject[queryIndex]->GetData( &dummyData, sizeof( dummyData ), D3DGETDATA_FLUSH );
+			if ( hr != S_FALSE )
+				break;
+			double flCurrTime = Plat_FloatTime();
+			// don't wait more than 200ms (5fps) for these
+			if ( flCurrTime - flStartTime > 0.200f )
+				break;
+			// Avoid burning a full core while waiting for the query. Spinning can actually harm performance
+			// because there might be driver threads that are trying to do work that end up starved, and the
+			// power drawn by the CPU may take away from the power available to the integrated graphics chip.
+			// A sleep of one millisecond should never be long enough to affect performance, especially since
+			// this should only trigger when the CPU is already ahead of the GPU.
+			// On L4D2/TF2 in GL mode this spinning was causing slowdowns.
+			ThreadSleep( 1 );
+		}
+		m_bQueryIssued[queryIndex] = false;
+		Assert(hr == S_OK || hr == D3DERR_DEVICELOST);
+
+		if ( hr == D3DERR_DEVICELOST )
+		{
+			MarkDeviceLost( );
+			return;
+		}
+	}
+	if ( bIssue )
+	{
+		m_pFrameSyncQueryObject[queryIndex]->Issue( D3DISSUE_END );
+		m_bQueryIssued[queryIndex] = true;
+	}
 }
 
 void CShaderAPIDx8::ForceHardwareSync( void )
@@ -3913,46 +4069,29 @@ void CShaderAPIDx8::ForceHardwareSync( void )
 	// use the asynchronous query system with D3DQUERYTYPE_EVENT and 
 	// data size 0.  When GetData returns S_OK for the query, you 
 	// know that frame has finished.
-	
-	if ( !mat_frame_sync_force_texture.GetInt() && m_DeviceSupportsCreateQuery && m_pFrameSyncQueryObject )
+	if ( mat_frame_sync_force_texture.GetBool() )
 	{
-		BOOL bDummy;
-		HRESULT hr;
-		
+		ForceHardwareSync_WithManagedTexture();
+	}
+	else if ( m_pFrameSyncQueryObject[0] )
+	{
 		// FIXME: Could install a callback into the materialsystem to do something while waiting for
 		// the frame to finish (update sound, etc.)
 		
 		// Disable VCR mode here or else it'll screw up (and we don't really care if this part plays back in exactly the same amount of time).
 		VCRSetEnabled( false );
 
-		// NOTE: This fix helps out motherboards that are a little freaky.
-		// On such boards, sometimes the driver has to reset itself (an event which takes several seconds)
-		// and when that happens, the frame sync query object gets lost
-		double flStartTime = Plat_FloatTime();
-		do
+		m_currentSyncQuery ++;
+		if ( m_currentSyncQuery >= ARRAYSIZE(m_pFrameSyncQueryObject) )
 		{
-			hr = m_pFrameSyncQueryObject->GetData( &bDummy, sizeof( bDummy ), D3DGETDATA_FLUSH );
-			double flCurrTime = Plat_FloatTime();
-			if ( flCurrTime - flStartTime > 3.0f )
-				break;
-		} while( hr == S_FALSE );
-
-		VCRSetEnabled( true );
-
-		if ( hr == D3DERR_DEVICELOST )
-		{
-			MarkDeviceLost( );
-			return;
+			m_currentSyncQuery = 0;
 		}
-
-		Assert( hr == S_OK );
-		m_pFrameSyncQueryObject->Issue( D3DISSUE_END );
+		double fStart = Plat_FloatTime();
+		int waitIndex = ((m_currentSyncQuery + NUM_FRAME_SYNC_QUERIES) - (NUM_FRAME_SYNC_FRAMES_LATENCY+1)) % NUM_FRAME_SYNC_QUERIES;
+		UpdateFrameSyncQuery( waitIndex, false );
+		UpdateFrameSyncQuery( m_currentSyncQuery, true );
+		VCRSetEnabled( true );
 	} 
-	else
-	{
-		// Modify a really small texture and then draw with that.
-		ForceHardwareSync_WithManagedTexture();
-	}
 #else
 	DWORD hFence = Dx9Device()->InsertFence();
 	Dx9Device()->BlockOnFence( hFence );
@@ -5124,6 +5263,24 @@ void CShaderAPIDx8::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 	}
 }
 
+void CShaderAPIDx8::OverrideAlphaWriteEnable( bool bOverrideEnable, bool bAlphaWriteEnable )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+	{
+		m_TransitionTable.OverrideAlphaWriteEnable( bOverrideEnable, bAlphaWriteEnable );
+	}
+}
+
+void CShaderAPIDx8::OverrideColorWriteEnable( bool bOverrideEnable, bool bColorWriteEnable )
+{
+	LOCK_SHADERAPI();
+	if ( !g_pShaderDeviceDx8->IsDeactivated() )
+	{
+		m_TransitionTable.OverrideColorWriteEnable( bOverrideEnable, bColorWriteEnable );
+	}
+}
+
 void CShaderAPIDx8::UpdateFastClipUserClipPlane( void )
 {
 	float plane[4];
@@ -5299,30 +5456,28 @@ void CShaderAPIDx8::CommitFastClipPlane( )
 	D3DXMatrixIdentity( &m_CachedFastClipProjectionMatrix );
 
 	// Compute worldToProjection - need inv. transpose for transforming plane.
-	D3DXMATRIX projection = GetTransform(MATERIAL_PROJECTION);
-	projection(3, 2) *= 0.5f;		// pull in zNear because the shear in effect 
-									// moves it out: clipping artifacts when looking down at water 
-									// could occur if this multiply is not done
+	D3DXMATRIX viewToProjInvTrans, viewToProjInv, viewToProj = GetTransform(MATERIAL_PROJECTION);
+	viewToProj._43 *= 0.5f;		// pull in zNear because the shear in effect 
+								// moves it out: clipping artifacts when looking down at water 
+								// could occur if this multiply is not done
 
-	D3DXMATRIX worldToViewInvTrans = GetUserClipTransform();
-	D3DXMATRIX viewToProjectionInvTrans = projection;
+	D3DXMATRIX worldToViewInvTrans, worldToViewInv, worldToView = GetUserClipTransform();
 
-	D3DXMatrixInverse(&worldToViewInvTrans, NULL, &worldToViewInvTrans);
-	D3DXMatrixTranspose(&worldToViewInvTrans, &worldToViewInvTrans); 	
+	D3DXMatrixInverse( &worldToViewInv, NULL, &worldToView );
+	D3DXMatrixTranspose( &worldToViewInvTrans, &worldToViewInv ); 	
 
-	D3DXMatrixInverse(&viewToProjectionInvTrans, NULL, &viewToProjectionInvTrans);
-	D3DXMatrixTranspose(&viewToProjectionInvTrans, &viewToProjectionInvTrans); 
+	D3DXMatrixInverse( &viewToProjInv, NULL, &viewToProj );
+	D3DXMatrixTranspose( &viewToProjInvTrans, &viewToProjInv ); 
 
 	D3DXPLANE plane;
-	D3DXPlaneNormalize(&plane, &m_DynamicState.m_FastClipPlane);
-	D3DXVECTOR4 clipPlane(plane.a, plane.b, plane.c, plane.d);
+	D3DXPlaneNormalize( &plane, &m_DynamicState.m_FastClipPlane );
+	D3DXVECTOR4 clipPlane( plane.a, plane.b, plane.c, plane.d );
 
 	// transform clip plane into view space
-	D3DXVec4Transform(&clipPlane, &clipPlane, &worldToViewInvTrans);
-
+	D3DXVec4Transform( &clipPlane, &clipPlane, &worldToViewInvTrans );
 
 	// transform clip plane into projection space
-	D3DXVec4Transform(&clipPlane, &clipPlane, &viewToProjectionInvTrans);
+	D3DXVec4Transform( &clipPlane, &clipPlane, &viewToProjInvTrans );
 	
 #define ALLOW_FOR_FASTCLIPDUMPS 0
 
@@ -5339,7 +5494,6 @@ void CShaderAPIDx8::CommitFastClipPlane( )
 			DevMsg( "    %f %f %f %f\n", clipPlane.x, clipPlane.y, clipPlane.z, clipPlane.w );
 #endif
 
-		
 		D3DXVec4Normalize( &clipPlane, &clipPlane );
 
 		//if ((fabs(clipPlane.z) > 0.01) && (fabs(clipPlane.w) > 0.01f))  
@@ -5359,7 +5513,7 @@ void CShaderAPIDx8::CommitFastClipPlane( )
 	}
 #endif
 
-	m_CachedFastClipProjectionMatrix = projection * m_CachedFastClipProjectionMatrix;
+	m_CachedFastClipProjectionMatrix = viewToProj * m_CachedFastClipProjectionMatrix;
 
 	// Update the cached polyoffset matrix (with clip) too:
 	ComputePolyOffsetMatrix( m_CachedFastClipProjectionMatrix, m_CachedFastClipPolyOffsetProjectionMatrix );
@@ -5788,7 +5942,7 @@ bool CShaderAPIDx8::ShouldUsePixelFogForMode( MaterialFogMode_t fogMode )
 	if( fogMode == MATERIAL_FOG_NONE )
 		return false;
 
-	if( IsX360() ) //always use pixel fog in X360
+	if( IsX360() || IsPosix() ) // Always use pixel fog on X360 and Posix
 		return true;
 
 	if( g_pHardwareConfig->Caps().m_nDXSupportLevel < 90 ) //pixel fog not available until at least ps2.0
@@ -5843,7 +5997,9 @@ void CShaderAPIDx8::FogMode( MaterialFogMode_t fogMode )
 	}
 
 	if( ShouldUsePixelFogForMode( fogMode ) )
+	{
 		bFogEnable = false; //disable FF fog when doing fog in the pixel shader
+	}
 
 #if 0
 	// HACK - do this to disable fog always
@@ -6068,9 +6224,14 @@ FORCEINLINE void CShaderAPIDx8::SetVertexShaderConstantInternal( int var, float 
 		}
 		Assert( var + numVecs <= g_pHardwareConfig->NumVertexShaderConstants() );
 
-		if ( !bForce && memcmp( pVec, &m_DynamicState.m_pVectorVertexShaderConstant[var], numVecs * 4 * sizeof( float ) ) == 0 )
+		if ( !bForce )
 		{
-			return;
+			int skip = 0;
+			numVecs = AdjustUpdateRange( pVec, &m_DesiredState.m_pVectorVertexShaderConstant[var], numVecs, &skip );
+			if ( !numVecs )
+				return;
+			var += skip;
+			pVec += skip * 4;
 		}
 		Dx9Device()->SetVertexShaderConstantF( var, pVec, numVecs );
 		memcpy( &m_DynamicState.m_pVectorVertexShaderConstant[var], pVec, numVecs * 4 * sizeof(float) );
@@ -6171,18 +6332,12 @@ FORCEINLINE void CShaderAPIDx8::SetPixelShaderConstantInternal( int nStartConst,
 	{
 		if ( ! bForce )
 		{
-			DWORD* pSrc = (DWORD*)pValues;
-			DWORD* pDst = (DWORD*)&m_DesiredState.m_pVectorPixelShaderConstant[nStartConst];
-			while( nNumConsts && ( pSrc[0] == pDst[0] ) && ( pSrc[1] == pDst[1] ) && ( pSrc[2] == pDst[2] ) && ( pSrc[3] == pDst[3] ) )
-			{
-				pSrc += 4;
-				pDst += 4;
-				nNumConsts--;
-				nStartConst++;
-			}
+			int skip = 0;
+			nNumConsts = AdjustUpdateRange( pValues, &m_DesiredState.m_pVectorPixelShaderConstant[nStartConst], nNumConsts, &skip );
 			if ( !nNumConsts )
 				return;
-			pValues = reinterpret_cast< float const * >( pSrc );
+			nStartConst += skip;
+			pValues += skip * 4;
 		}
 					
 		Dx9Device()->SetPixelShaderConstantF( nStartConst, pValues, nNumConsts );
@@ -6522,6 +6677,22 @@ inline bool CShaderAPIDx8::WouldBeOverTextureLimit( ShaderAPITextureHandle_t hTe
 	return false;
 }
 
+
+#define SETSAMPLESTATEANDMIRROR( sampler, samplerState, state_type, mirror_field, value )	\
+	if ( samplerState.mirror_field != value )												\
+	{																						\
+		samplerState.mirror_field = value;													\
+		::SetSamplerState( Dx9Device(), sampler, state_type, value );	\
+	}
+
+#define SETSAMPLESTATEANDMIRROR_FLOAT( sampler, samplerState, state_type, mirror_field, value )	\
+	if ( samplerState.mirror_field != value )												\
+		{																					\
+		samplerState.mirror_field = value;													\
+		::SetSamplerState( Dx9Device(), sampler, state_type, *(DWORD*)&value );	\
+		}
+
+
 //-----------------------------------------------------------------------------
 // Sets state on the board related to the texture state
 //-----------------------------------------------------------------------------
@@ -6541,7 +6712,6 @@ void CShaderAPIDx8::SetTextureState( Sampler_t sampler, ShaderAPITextureHandle_t
 		return;
 	}
 
-
 	samplerState.m_BoundTexture = hTexture;
 
 	// Don't set this if we're disabled
@@ -6554,7 +6724,7 @@ void CShaderAPIDx8::SetTextureState( Sampler_t sampler, ShaderAPITextureHandle_t
 	RECORD_INT( GetTexture( hTexture).m_CurrentCopy );
 
 	IDirect3DBaseTexture *pTexture = CShaderAPIDx8::GetD3DTexture( hTexture );
-	
+
 #if defined( _X360 )
 	DWORD linearFormatBackup = pTexture->Format.dword[0]; //if we convert to srgb format, we need the original format for reverting. We only need the first DWORD of GPUTEXTURE_FETCH_CONSTANT.
 	if ( samplerState.m_SRGBReadEnable ) 
@@ -6587,55 +6757,62 @@ void CShaderAPIDx8::SetTextureState( Sampler_t sampler, ShaderAPITextureHandle_t
 	}
 
 	if ( !m_bDebugTexturesRendering )
-		++ tex.m_nTimesBoundThisFrame;
+		++tex.m_nTimesBoundThisFrame;
 
-	tex.m_nTimesBoundMax = max( tex.m_nTimesBoundMax, tex.m_nTimesBoundThisFrame );
+	tex.m_nTimesBoundMax = MAX( tex.m_nTimesBoundMax, tex.m_nTimesBoundThisFrame );
 
-	if ( samplerState.m_UTexWrap != tex.m_UTexWrap )
-	{
-		samplerState.m_UTexWrap = tex.m_UTexWrap;
-		SetSamplerState( sampler, D3DSAMP_ADDRESSU, samplerState.m_UTexWrap );
-	}
-	if ( samplerState.m_VTexWrap != tex.m_VTexWrap)
-	{
-		samplerState.m_VTexWrap = tex.m_VTexWrap;
-		SetSamplerState( sampler, D3DSAMP_ADDRESSV, samplerState.m_VTexWrap );
-	}
-	if ( samplerState.m_WTexWrap != tex.m_WTexWrap)
-	{
-		samplerState.m_WTexWrap = tex.m_WTexWrap;
-		SetSamplerState( sampler, D3DSAMP_ADDRESSW, samplerState.m_WTexWrap );
-	}
+	static MaterialSystem_Config_t &materialSystemConfig = ShaderUtil()->GetConfig();
 
-	bool noFilter = ShaderUtil()->GetConfig().bFilterTextures == 0;
-	D3DTEXTUREFILTERTYPE minFilter = noFilter ? D3DTEXF_NONE : tex.m_MinFilter;
-	if ( samplerState.m_MinFilter != minFilter )
-	{
-		samplerState.m_MinFilter = minFilter;
-		SetSamplerState( sampler, D3DSAMP_MINFILTER, samplerState.m_MinFilter );
-	}
-	D3DTEXTUREFILTERTYPE magFilter = noFilter ? D3DTEXF_NONE : tex.m_MagFilter;
-	if ( samplerState.m_MagFilter != magFilter )
-	{
-		samplerState.m_MagFilter = magFilter;
-		SetSamplerState( sampler, D3DSAMP_MAGFILTER, samplerState.m_MagFilter );
-	}
-
-	bool noMipFilter = ShaderUtil()->GetConfig().bMipMapTextures == 0;
+	D3DTEXTUREFILTERTYPE minFilter = tex.m_MinFilter;
+	D3DTEXTUREFILTERTYPE magFilter = tex.m_MagFilter;
 	D3DTEXTUREFILTERTYPE mipFilter = tex.m_MipFilter;
-	if( noMipFilter )
+	int finestMipmapLevel		   = tex.m_FinestMipmapLevel;
+	float lodBias				   = tex.m_LodBias;
+
+	if ( materialSystemConfig.bMipMapTextures == 0 )
 	{
 		mipFilter = D3DTEXF_NONE;
 	} 
-	else if( noFilter )
+
+	if ( materialSystemConfig.bFilterTextures == 0 && tex.m_NumLevels > 1 ) 
 	{
+		minFilter = D3DTEXF_NONE;
+		magFilter = D3DTEXF_NONE;
 		mipFilter = D3DTEXF_POINT;
 	}
-	if ( samplerState.m_MipFilter != mipFilter )
+
+	D3DTEXTUREADDRESS uTexWrap = tex.m_UTexWrap;
+	D3DTEXTUREADDRESS vTexWrap = tex.m_VTexWrap;
+	D3DTEXTUREADDRESS wTexWrap = tex.m_WTexWrap;
+
+	// For now do this the old way on OSX since the dxabstract layer doesn't support SetSamplerStates
+	// ###OSX### punting on OSX for now
+#if DX_TO_GL_ABSTRACTION && !OSX
+	if ( ( samplerState.m_MinFilter != minFilter ) || ( samplerState.m_MagFilter != magFilter ) || ( samplerState.m_MipFilter != mipFilter ) ||
+		( samplerState.m_UTexWrap != uTexWrap ) || ( samplerState.m_VTexWrap != vTexWrap ) || ( samplerState.m_WTexWrap != wTexWrap ) || 
+		( samplerState.m_FinestMipmapLevel != finestMipmapLevel ) || ( samplerState.m_LodBias != lodBias ) )
 	{
+		samplerState.m_UTexWrap = uTexWrap;
+		samplerState.m_VTexWrap = vTexWrap;
+		samplerState.m_WTexWrap = wTexWrap;
+		samplerState.m_MinFilter = minFilter;
+		samplerState.m_MagFilter = magFilter;
 		samplerState.m_MipFilter = mipFilter;
-		SetSamplerState( sampler, D3DSAMP_MIPFILTER, samplerState.m_MipFilter );
+		samplerState.m_FinestMipmapLevel = finestMipmapLevel;
+		samplerState.m_LodBias = lodBias;
+		Dx9Device()->SetSamplerStates( sampler, uTexWrap, vTexWrap, wTexWrap, minFilter, magFilter, mipFilter, finestMipmapLevel, lodBias );
 	}
+#else
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_ADDRESSU, m_UTexWrap, uTexWrap );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_ADDRESSV, m_VTexWrap, vTexWrap );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_ADDRESSW, m_WTexWrap, wTexWrap );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_MINFILTER, m_MinFilter, minFilter );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_MAGFILTER, m_MagFilter, magFilter );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_MIPFILTER, m_MipFilter, mipFilter );
+	SETSAMPLESTATEANDMIRROR( sampler, samplerState, D3DSAMP_MAXMIPLEVEL, m_FinestMipmapLevel, finestMipmapLevel );
+	SETSAMPLESTATEANDMIRROR_FLOAT( sampler, samplerState, D3DSAMP_MIPMAPLODBIAS, m_LodBias, lodBias );
+	
+#endif
 }
 
 void CShaderAPIDx8::BindTexture( Sampler_t sampler, ShaderAPITextureHandle_t textureHandle )
@@ -6883,6 +7060,8 @@ ShaderAPITextureHandle_t CShaderAPIDx8::CreateTextureHandle( void )
 
 void CShaderAPIDx8::CreateTextureHandles( ShaderAPITextureHandle_t *handles, int count )
 {
+	TM_ZONE_DEFAULT( TELEMETRY_LEVEL0 );
+
 	if ( count <= 0 )
 		return;
 
@@ -6890,16 +7069,22 @@ void CShaderAPIDx8::CreateTextureHandles( ShaderAPITextureHandle_t *handles, int
 
 	int idxCreating = 0;
 	ShaderAPITextureHandle_t hTexture;
-	for ( hTexture = m_Textures.Head(); hTexture != m_Textures.InvalidIndex(); hTexture = m_Textures.Next( hTexture ) )
+
 	{
-		if ( !( m_Textures[hTexture].m_Flags & Texture_t::IS_ALLOCATED ) )
+		tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - Search", __FUNCTION__ );
+
+		for ( hTexture = m_Textures.Head(); hTexture != m_Textures.InvalidIndex(); hTexture = m_Textures.Next( hTexture ) )
 		{
-			handles[ idxCreating ++ ] = hTexture;
-			if ( idxCreating >= count )
-				return;
+			if ( !( m_Textures[hTexture].m_Flags & Texture_t::IS_ALLOCATED ) )
+			{
+				handles[ idxCreating ++ ] = hTexture;
+				if ( idxCreating >= count )
+					return;
+			}
 		}
 	}
 
+	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - Add", __FUNCTION__ );
 	while ( idxCreating < count )
 		handles[ idxCreating ++ ] = m_Textures.AddToTail();
 }
@@ -6937,7 +7122,13 @@ void CShaderAPIDx8::CreateTextures(
 	const char *pDebugName,
 	const char *pTextureGroupName )
 {
+	TM_ZONE_DEFAULT( TELEMETRY_LEVEL0 );
+
 	LOCK_SHADERAPI();
+
+	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - PostLock", __FUNCTION__ );
+
+	Assert( this == g_pShaderAPI );
 
 	if ( depth == 0 )
 	{
@@ -6949,25 +7140,46 @@ void CShaderAPIDx8::CreateTextures(
 	bool managed = (creationFlags & TEXTURE_CREATE_MANAGED) != 0;
 	bool isDepthBuffer = (creationFlags & TEXTURE_CREATE_DEPTHBUFFER) != 0;
 	bool isDynamic = (creationFlags & TEXTURE_CREATE_DYNAMIC) != 0;
+	bool isSRGB = (creationFlags & TEXTURE_CREATE_SRGB) != 0;			// for Posix/GL only... not used here ?
+
+#if defined(IS_WINDOWS_PC) && defined(SHADERAPIDX9)
+	extern bool g_ShaderDeviceUsingD3D9Ex;
+	if ( g_ShaderDeviceUsingD3D9Ex && managed )
+	{
+		// Managed textures aren't available under D3D9Ex, but we never lose
+		// texture data, so it's ok to use the default pool. Really. We can't
+		// lock default-pool textures like we normally would to upload, but we
+		// have special logic to blit full updates via D3DX helper functions
+		// in D3D9Ex mode (see texturedx8.cpp)
+		managed = false;
+		creationFlags &= ~TEXTURE_CREATE_MANAGED;
+	}
+#endif
 
 	// Can't be both managed + dynamic. Dynamic is an optimization, but 
 	// if it's not managed, then we gotta do special client-specific stuff
 	// So, managed wins out!
 	if ( managed )
 	{
+		creationFlags &= ~TEXTURE_CREATE_DYNAMIC;
 		isDynamic = false;
 	}
+
+	
 
 	// Create a set of texture handles
 	CreateTextureHandles( pHandles, count );
 	Texture_t **arrTxp = ( Texture_t ** ) stackalloc( count * sizeof( Texture_t * ) );
 
 	unsigned short usSetFlags = 0;
-	usSetFlags |= ( creationFlags & TEXTURE_CREATE_VERTEXTEXTURE)  ? Texture_t::IS_VERTEX_TEXTURE : 0;
+	usSetFlags |= ( IsPosix() || ( creationFlags & (TEXTURE_CREATE_DYNAMIC | TEXTURE_CREATE_MANAGED) ) ) ? Texture_t::IS_LOCKABLE : 0;
+	usSetFlags |= ( creationFlags & TEXTURE_CREATE_VERTEXTEXTURE) ? Texture_t::IS_VERTEX_TEXTURE : 0;
 #if defined( _X360 )
 	usSetFlags |= ( creationFlags & TEXTURE_CREATE_RENDERTARGET ) ? Texture_t::IS_RENDER_TARGET : 0;
 	usSetFlags |= ( creationFlags & TEXTURE_CREATE_CANCONVERTFORMAT ) ? Texture_t::CAN_CONVERT_FORMAT : 0;
 #endif
+
+	tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - CreateFrames", __FUNCTION__ );
 
 	for ( int idxFrame = 0; idxFrame < count; ++ idxFrame )
 	{
@@ -7003,12 +7215,16 @@ void CShaderAPIDx8::CreateTextures(
 		// Set the initial texture state
 		if ( numCopies <= 1 )
 		{
+			tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - CreateD3DTexture", __FUNCTION__ );
+
 			pTexture->m_NumCopies = 1;
-			pD3DTex = CreateD3DTexture( width, height, depth, dstImageFormat, numMipLevels, creationFlags );
+			pD3DTex = CreateD3DTexture( width, height, depth, dstImageFormat, numMipLevels, creationFlags, (char*)pDebugName );
 			pTexture->SetTexture( pD3DTex );
 		}
 		else
 		{
+			tmZone( TELEMETRY_LEVEL0, TMZF_NONE, "%s - CreateD3DTexture", __FUNCTION__ );
+
 			pTexture->m_NumCopies = numCopies;
 			{
 // X360TEMP
@@ -7017,7 +7233,7 @@ void CShaderAPIDx8::CreateTextures(
 			}
 			for (int k = 0; k < numCopies; ++k)
 			{
-				pD3DTex = CreateD3DTexture( width, height, depth, dstImageFormat, numMipLevels, creationFlags );
+				pD3DTex = CreateD3DTexture( width, height, depth, dstImageFormat, numMipLevels, creationFlags, (char*)pDebugName );
 				pTexture->SetTexture( k, pD3DTex );
 			}
 		}
@@ -7269,7 +7485,7 @@ void CShaderAPIDx8::WriteTextureToFile( ShaderAPITextureHandle_t hTexture, const
 
 	// Get the level of the texture we want to read from
 	IDirect3DSurface* pTextureLevel;
-	HRESULT hr = hr = pD3DTexture ->GetSurfaceLevel( 0, &pTextureLevel );
+	HRESULT hr = pD3DTexture ->GetSurfaceLevel( 0, &pTextureLevel );
 	if ( FAILED( hr ) )
 		return;
 
@@ -7404,7 +7620,14 @@ IDirect3DSurface* CShaderAPIDx8::GetTextureSurface( ShaderAPITextureHandle_t tex
 	if ( IsX360() && ( tex.m_Flags & Texture_t::IS_RENDER_TARGET_SURFACE ) )
 	{
 		pSurface = tex.GetRenderTargetSurface( false );
+
+#if POSIX
+		// dxabstract's AddRef/Release have optional args to help track usage
+		pSurface->AddRef( 0, "CShaderAPIDx8::GetTextureSurface public addref");
+#else
 		pSurface->AddRef();
+#endif
+
 		return pSurface;
 	}
 
@@ -7442,7 +7665,9 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 {
 	LOCK_SHADERAPI();
 	if ( IsDeactivated( ) )
+	{
 		return;
+	}
 
 	// GR - need to flush batched geometry
 	FlushBufferedPrimitives();
@@ -7457,8 +7682,8 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 	}
 #endif
 
-	IDirect3DSurface* pColorSurface;
-	IDirect3DSurface* pZSurface;
+	IDirect3DSurface* pColorSurface = NULL;
+	IDirect3DSurface* pZSurface = NULL;
 
 	RECORD_COMMAND( DX8_SET_RENDER_TARGET, 3 );
 	RECORD_INT( nRenderTargetID );
@@ -7478,9 +7703,19 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 	{
 		pColorSurface = m_pBackBufferSurface;
 
-		// This is just to make the code a little simpler...
-		// (simplifies the release logic)
-		pColorSurface->AddRef();
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+		if( pColorSurface )
+#endif
+		{
+			// This is just to make the code a little simpler...
+			// (simplifies the release logic)
+#if POSIX
+			// dxabstract's AddRef/Release have optional args to help track usage
+			pColorSurface->AddRef( 0, "+C  CShaderAPIDx8::SetRenderTargetEx public addref 1");
+#else
+			pColorSurface->AddRef();
+#endif
+		}
 	}
 	else
 	{
@@ -7488,7 +7723,9 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		UnbindTexture( colorTextureHandle );
 		pColorSurface = GetTextureSurface( colorTextureHandle );
 		if ( !pColorSurface )
+		{
 			return;
+		}
 
 		usingTextureTarget = true;
 	}
@@ -7498,8 +7735,18 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		// using the default depth buffer
 		pZSurface = m_pZBufferSurface;
 
-		// simplify the prologue logic
-		pZSurface->AddRef();
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+		if( pZSurface )
+#endif
+		{
+			// simplify the prologue logic
+#if POSIX
+			// dxabstract's AddRef/Release have optional args to help track usage
+			pZSurface->AddRef( 0, "+D  CShaderAPIDx8::SetRenderTargetEx public addref 1");
+#else
+			pZSurface->AddRef();
+#endif
+		}
 	}
 	else if ( depthTextureHandle == SHADER_RENDERTARGET_NONE )
 	{
@@ -7519,8 +7766,15 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		if ( tex.m_Flags & Texture_t::IS_DEPTH_STENCIL )
 		{
 			pZSurface = GetDepthTextureSurface( depthTextureHandle );
-			if ( pZSurface )	
+			if ( pZSurface )
+			{	
+#if POSIX
+				// dxabstract's AddRef/Release have optional args to help track usage
+				pZSurface->AddRef( 0, "+D CShaderAPIDx8::SetRenderTargetEx public addref 2");
+#else
 				pZSurface->AddRef();
+#endif
+			}
 		}
 		else
 		{	
@@ -7530,7 +7784,12 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		if ( !pZSurface )
 		{
 			// Refcount of color surface was increased above
+#if POSIX
+			// dxabstract's AddRef/Release have optional args to help track usage
+			pColorSurface->Release( 0, "-C  CShaderAPIDx8::SetRenderTargetEx public release 1" );
+#else
 			pColorSurface->Release();
+#endif
 			return;
 		}
 		usingTextureTarget = true;
@@ -7542,12 +7801,19 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		D3DSURFACE_DESC zSurfaceDesc, colorSurfaceDesc;
 		pZSurface->GetDesc( &zSurfaceDesc );
 		pColorSurface->GetDesc( &colorSurfaceDesc );
-		Assert( colorSurfaceDesc.Width <= zSurfaceDesc.Width );
-		Assert( colorSurfaceDesc.Height <= zSurfaceDesc.Height );
+
+		if ( !HushAsserts() )
+		{
+			Assert( colorSurfaceDesc.Width <= zSurfaceDesc.Width );
+			Assert( colorSurfaceDesc.Height <= zSurfaceDesc.Height );
+		}
 	}
 #endif
 
-	m_UsingTextureRenderTarget = usingTextureTarget;
+	// we only set this flag for the 0th render target so that NULL
+	// render targets 1-3 don't mess with the viewport on the main RT
+	if( nRenderTargetID == 0 )
+		m_UsingTextureRenderTarget = usingTextureTarget;
 
 	// NOTE: The documentation says that SetRenderTarget increases the refcount
 	// but it doesn't appear to in practice. If this somehow changes (perhaps
@@ -7581,7 +7847,9 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		Dx9Device()->SetDepthStencilSurface( pZSurface );
 	}
 
-	if ( m_UsingTextureRenderTarget )
+	// The 0th render target defines the viewport, therefore it also defines
+	// the viewport limits.
+	if ( m_UsingTextureRenderTarget && nRenderTargetID == 0 )
 	{
 		D3DSURFACE_DESC  desc;
 		HRESULT hr;
@@ -7598,14 +7866,36 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 		m_ViewportMaxHeight = desc.Height;
 	}
 
+	static bool assert_on_refzero = false;
 	int ref;
 	if ( pZSurface )
 	{
+#if POSIX
+		ref = pZSurface->Release( 0, "-D  CShaderAPIDx8::SetRenderTargetEx public release (z surface)");
+#else
 		ref = pZSurface->Release();
-		Assert( ref != 0 );
+#endif
+
+		if(assert_on_refzero)
+		{
+			Assert( ref != 0 );
+		}
 	}
 
-	ref = pColorSurface->Release();
+#ifdef ENABLE_NULLREF_DEVICE_SUPPORT
+	if( pColorSurface )
+#endif
+	{
+#if POSIX
+		ref = pColorSurface->Release( 0, "-C  CShaderAPIDx8::SetRenderTargetEx public release (color surface)");
+#else
+		ref = pColorSurface->Release();
+#endif
+		if(assert_on_refzero)
+		{
+			Assert( ref != 0 );
+		}
+	}
 
 	// Changing the render target sets a default viewport.  Force rewrite to preserve the current desired state.
 	m_DynamicState.m_Viewport.X = 0;
@@ -7614,8 +7904,6 @@ void CShaderAPIDx8::SetRenderTargetEx( int nRenderTargetID, ShaderAPITextureHand
 	m_DynamicState.m_Viewport.Height = (DWORD)-1;
 
 	ADD_COMMIT_FUNC( COMMIT_PER_DRAW, COMMIT_ALWAYS, CommitSetViewports );
-
-//	Assert( ref != 0 );
 }
 
 
@@ -7631,9 +7919,9 @@ void CShaderAPIDx8::SetRenderTarget( ShaderAPITextureHandle_t colorTextureHandle
 //-----------------------------------------------------------------------------
 // Returns the nearest supported format
 //-----------------------------------------------------------------------------
-ImageFormat CShaderAPIDx8::GetNearestSupportedFormat( ImageFormat fmt ) const
+ImageFormat CShaderAPIDx8::GetNearestSupportedFormat( ImageFormat fmt, bool bFilteringRequired /* = true */ ) const
 {
-	return FindNearestSupportedFormat( fmt, false, false, true );
+	return FindNearestSupportedFormat( fmt, false, false, bFilteringRequired );
 }
 
 
@@ -7655,6 +7943,8 @@ bool CShaderAPIDx8::DoRenderTargetsNeedSeparateDepthBuffer() const
 //-----------------------------------------------------------------------------
 void CShaderAPIDx8::ModifyTexture( ShaderAPITextureHandle_t textureHandle )
 {
+	tmZone( TELEMETRY_LEVEL2, TMZF_NONE, "%s", __FUNCTION__ );
+
 	LOCK_SHADERAPI();
 	// Can't do this if we're locked!
 	Assert( m_ModifyTextureLockedLevel < 0 );
@@ -7700,6 +7990,8 @@ void CShaderAPIDx8::AdvanceCurrentCopy( ShaderAPITextureHandle_t hTexture )
 bool CShaderAPIDx8::TexLock( int level, int cubeFaceID, int xOffset, int yOffset, 
 								int width, int height, CPixelWriter& writer )
 {
+	tmZone( TELEMETRY_LEVEL2, TMZF_NONE, "%s", __FUNCTION__ );
+
 	LOCK_SHADERAPI();
 
 	Assert( m_ModifyTextureLockedLevel < 0 );
@@ -7748,6 +8040,8 @@ bool CShaderAPIDx8::TexLock( int level, int cubeFaceID, int xOffset, int yOffset
 
 void CShaderAPIDx8::TexUnlock( )
 {
+	tmZone( TELEMETRY_LEVEL2, TMZF_NONE, "%s", __FUNCTION__ );
+
 	LOCK_SHADERAPI();
 	if ( m_ModifyTextureLockedLevel >= 0 )
 	{
@@ -7820,6 +8114,8 @@ void CShaderAPIDx8::TexImage2D(
 #if defined( _X360 )
 	info.m_bSrcIsTiled = bSrcIsTiled;
 	info.m_bCanConvertFormat = ( tex.m_Flags & Texture_t::CAN_CONVERT_FORMAT ) != 0;
+#else
+	info.m_bTextureIsLockable = ( tex.m_Flags & Texture_t::IS_LOCKABLE ) != 0;
 #endif
 	LoadTexture( info );
 	SetModifyTexture( info.m_pTexture );
@@ -7897,8 +8193,71 @@ void CShaderAPIDx8::TexSubImage2D(
 #if defined( _X360 )
 	info.m_bSrcIsTiled = bSrcIsTiled;
 	info.m_bCanConvertFormat = ( tex.m_Flags & Texture_t::CAN_CONVERT_FORMAT ) != 0;
+#else
+	info.m_bTextureIsLockable = ( tex.m_Flags & Texture_t::IS_LOCKABLE ) != 0;
 #endif
 	LoadSubTexture( info, xOffset, yOffset, srcStride );
+}
+
+//-----------------------------------------------------------------------------
+// Volume texture upload
+//-----------------------------------------------------------------------------
+void CShaderAPIDx8::TexImageFromVTF( IVTFTexture *pVTF, int iVTFFrame )
+{
+	LOCK_SHADERAPI();
+	Assert( pVTF );
+	AssertValidTextureHandle( GetModifyTextureHandle() );
+	if ( !m_Textures.IsValidIndex( GetModifyTextureHandle() ) )
+	{
+		return;
+	}
+	Texture_t& tex = GetTexture( GetModifyTextureHandle() );
+
+	// May need to switch textures....
+	if (tex.m_SwitchNeeded)
+	{
+		AdvanceCurrentCopy( GetModifyTextureHandle() );
+		tex.m_SwitchNeeded = false;
+	}
+
+	TextureLoadInfo_t info;
+	info.m_TextureHandle = GetModifyTextureHandle();
+	info.m_pTexture = GetModifyTexture();
+	info.m_nLevel = 0;
+	info.m_nCopy = tex.m_CurrentCopy;
+	info.m_CubeFaceID = (D3DCUBEMAP_FACES)0;
+	info.m_nWidth = 0;
+	info.m_nHeight = 0;
+	info.m_nZOffset = 0;
+	info.m_SrcFormat = pVTF->Format();
+	info.m_pSrcData = NULL;
+#if defined( _X360 )
+	info.m_bSrcIsTiled = pVTF->IsPreTiled();
+	info.m_bCanConvertFormat = ( tex.m_Flags & Texture_t::CAN_CONVERT_FORMAT ) != 0;
+#else
+	info.m_bTextureIsLockable = ( tex.m_Flags & Texture_t::IS_LOCKABLE ) != 0;
+#endif
+	if ( pVTF->Depth() > 1 )
+	{
+		LoadVolumeTextureFromVTF( info, pVTF, iVTFFrame );
+	}
+	else if ( pVTF->IsCubeMap() )
+	{
+		if ( HardwareConfig()->SupportsCubeMaps() )
+		{
+			LoadCubeTextureFromVTF( info, pVTF, iVTFFrame );
+		}
+		else
+		{
+			info.m_CubeFaceID = (D3DCUBEMAP_FACES)6;
+			LoadTextureFromVTF( info, pVTF, iVTFFrame );
+		}
+	}
+	else
+	{
+		LoadTextureFromVTF( info, pVTF, iVTFFrame );
+	}
+	SetModifyTexture( info.m_pTexture );
 }
 
 
@@ -7965,6 +8324,31 @@ void CShaderAPIDx8::TexSetPriority( int priority )
 	}
 #endif
 }
+
+void CShaderAPIDx8::TexLodClamp( int finest )
+{
+	LOCK_SHADERAPI();
+
+	ShaderAPITextureHandle_t hModifyTexture = GetModifyTextureHandle();
+	if ( hModifyTexture == INVALID_SHADERAPI_TEXTURE_HANDLE )
+		return;
+
+	Texture_t& tex = GetTexture( hModifyTexture );
+	tex.m_FinestMipmapLevel = finest;
+}
+
+void CShaderAPIDx8::TexLodBias( float bias )
+{
+	LOCK_SHADERAPI();
+
+	ShaderAPITextureHandle_t hModifyTexture = GetModifyTextureHandle();
+	if ( hModifyTexture == INVALID_SHADERAPI_TEXTURE_HANDLE )
+		return;
+
+	Texture_t& tex = GetTexture( hModifyTexture );
+	tex.m_LodBias = bias;
+}
+
 
 
 //-----------------------------------------------------------------------------
@@ -8340,7 +8724,6 @@ void CShaderAPIDx8::SetAmbientLightCube( Vector4D cube[6] )
 
 void CShaderAPIDx8::SetVertexShaderStateAmbientLightCube()
 {
-	Vector4D tempCube[6];
 	if (m_CachedAmbientLightCube & STATE_CHANGED_VERTEX_SHADER)
 	{
 		SetVertexShaderConstant( VERTEX_SHADER_AMBIENT_LIGHT, m_DynamicState.m_AmbientLightCube[0].Base(), 6 );
@@ -8559,11 +8942,324 @@ void CShaderAPIDx8::CopyRenderTargetToTextureEx( ShaderAPITextureHandle_t textur
 #endif
 }
 
+void CShaderAPIDx8::CopyRenderTargetToScratchTexture( ShaderAPITextureHandle_t srcRt, ShaderAPITextureHandle_t dstTex, Rect_t *pSrcRect, Rect_t *pDstRect )
+{
+	LOCK_SHADERAPI();
+
+	if  ( !TextureIsAllocated( srcRt ) || !TextureIsAllocated( dstTex ) )
+	{
+		Assert( !"Fix that render target or dest texture aren't allocated." );
+		return;
+	}
+
+	HRESULT hr = D3D_OK;
+
+	IDirect3DSurface9* srcSurf = NULL;
+	AssertValidTextureHandle( srcRt );
+	Texture_t *pSrcRt = &GetTexture( srcRt );
+	Assert( pSrcRt );
+	IDirect3DTexture *pD3DSrcRt = ( IDirect3DTexture * ) pSrcRt->GetTexture();
+	Assert( pD3DSrcRt );
+	hr = pD3DSrcRt->GetSurfaceLevel( 0, &srcSurf );
+	Assert( SUCCEEDED( hr ) && srcSurf );
+
+	IDirect3DSurface9* dstSurf = NULL;
+	AssertValidTextureHandle( dstTex );
+	Texture_t *pDstTex = &GetTexture( dstTex );
+	Assert( pDstTex );
+	IDirect3DTexture *pD3DDstTex = ( IDirect3DTexture * ) pDstTex->GetTexture();
+	Assert( pD3DDstTex );
+	hr = pD3DDstTex->GetSurfaceLevel( 0, &dstSurf );
+	Assert( SUCCEEDED( hr ) && dstSurf );
+
+	// This does it.
+	hr = Dx9Device()->GetRenderTargetData( srcSurf, dstSurf );
+	Assert( SUCCEEDED( hr ) );
+
+	srcSurf->Release();
+	dstSurf->Release();
+}
+
+//-------------------------------------------------------------------------
+// Allows locking and unlocking of very specific surface types. pOutBits and pOutPitch will not be touched if 
+// the lock fails.
+//-------------------------------------------------------------------------
+void CShaderAPIDx8::LockRect( void** pOutBits, int* pOutPitch, ShaderAPITextureHandle_t texHandle, int mipmap, int x, int y, int w, int h, bool bWrite, bool bRead )
+{
+	LOCK_SHADERAPI();
+
+	Assert( pOutBits );
+	Assert( pOutPitch );
+
+	if ( !TextureIsAllocated( texHandle ) )
+	{
+		Assert( !"Fix that texture isn't allocated." );
+		return;
+	}
+
+	HRESULT hr = D3D_OK;
+	IDirect3DSurface9* surf = NULL;
+	AssertValidTextureHandle( texHandle );
+	Texture_t *pTex = &GetTexture( texHandle );
+	Assert( pTex );
+	IDirect3DTexture *pD3DTex = ( IDirect3DTexture * ) pTex->GetTexture();
+	Assert( pD3DTex );
+
+	hr = pD3DTex->GetSurfaceLevel( mipmap, &surf );
+	Assert( SUCCEEDED( hr ) && surf );
+
+	D3DLOCKED_RECT lockRect = { 0 };
+	RECT srcRect = { x, y, w, h };
+	DWORD flags = 0;
+
+	if ( !bRead && !bWrite )
+	{
+		Assert( !"Asking to neither read nor write? Probably a caller bug." );
+		goto cleanup;
+	}
+
+	if (  bRead && !bWrite )
+		flags = D3DLOCK_READONLY;
+
+	hr = surf->LockRect( &lockRect, &srcRect, flags );
+	if ( FAILED( hr ) )
+	{
+		Assert( !"Lock failed, look into why." );
+		goto cleanup;
+	}
+
+	(*pOutBits)  = lockRect.pBits;
+	(*pOutPitch) = lockRect.Pitch;
+
+cleanup:
+	surf->Release();
+}
+
+void CShaderAPIDx8::UnlockRect( ShaderAPITextureHandle_t texHandle, int mipmap )
+{
+	LOCK_SHADERAPI();
+
+	if ( !TextureIsAllocated( texHandle ) )
+	{
+		Assert( !"Fix that texture isn't allocated." );
+		return;
+	}
+
+	HRESULT hr = D3D_OK;
+	IDirect3DSurface9* surf = NULL;
+	AssertValidTextureHandle( texHandle );
+	Texture_t *pTex = &GetTexture( texHandle );
+	Assert( pTex );
+	IDirect3DTexture *pD3DTex = ( IDirect3DTexture * ) pTex->GetTexture();
+	Assert( pD3DTex );
+
+	hr = pD3DTex->GetSurfaceLevel( mipmap, &surf );
+	Assert( SUCCEEDED( hr ) && surf );
+
+	hr = surf->UnlockRect();
+	Assert( SUCCEEDED( hr ) );
+
+	surf->Release();
+}
+
+static float GetAspectRatio( const Texture_t* pTex )
+{
+	Assert( pTex );
+	if ( pTex->m_Height != 0 )
+		return float( pTex->m_Width ) / float( pTex->m_Height );
+
+	Assert( !"Height of texture is 0, that seems like a bug." );
+	return 0.0f;
+}
+
+struct TextureExtents_t
+{
+	int width;
+	int height;
+	int depth;
+	int mipmaps;
+
+	int fine;
+	int coarse;
+
+	TextureExtents_t() : width( 0 ), height( 0 ), depth( 0 ), mipmaps( 0 ), fine( 0 ), coarse( 0 ) { }
+};
+
+// Returns positive integer on success, 0 or <0 on failure.
+static int FindCommonMipmapRange( int *pOutSrcFine, int *pOutDstFine, Texture_t *pSrcTex, Texture_t *pDstTex )
+{
+	Assert( pOutSrcFine && pOutDstFine );
+	Assert( pSrcTex && pDstTex );
+
+	if ( GetAspectRatio( pSrcTex ) != GetAspectRatio( pDstTex ) )
+		return 0;
+
+	TextureExtents_t src, 
+		             dst;
+
+	// LOD Clamp indicates that there's no actual data in the finer mipmap levels yet, so respect it when determining
+	// the source and destination levels that could have data.
+	const int srcLodClamp = pSrcTex->GetLodClamp();
+	src.width =  Max( 1, pSrcTex->GetWidth()  >> srcLodClamp );
+	src.height = Max( 1, pSrcTex->GetHeight() >> srcLodClamp );
+	src.depth =  Max( 1, pSrcTex->GetDepth()  >> srcLodClamp );
+	src.mipmaps = pSrcTex->m_NumLevels - srcLodClamp;
+	Assert( src.mipmaps >= 1 );
+	
+
+	const int dstLodClamp = pDstTex->GetLodClamp();
+	dst.width =  Max( 1, pDstTex->GetWidth()  >> dstLodClamp );
+	dst.height = Max( 1, pDstTex->GetHeight() >> dstLodClamp );
+	dst.depth =  Max( 1, pDstTex->GetDepth()  >> dstLodClamp );
+	dst.mipmaps = pDstTex->m_NumLevels - dstLodClamp;
+	Assert( dst.mipmaps >= 1 );
+
+	TextureExtents_t *pLarger = NULL, 
+		             *pSmaller = NULL;
+
+	if ( src.width >= dst.width && src.height >= dst.height && src.depth >= dst.depth )
+	{
+		pLarger = &src;
+		pSmaller = &dst;
+	}
+	else
+	{
+		pLarger = &dst;
+		pSmaller = &src;
+	}
+
+	// Since we are same aspect ratio, only need to test one dimension
+	while ( ( pLarger->width >> pLarger->fine ) > pSmaller->width )
+	{
+		++pLarger->fine;
+		--pLarger->mipmaps;
+	}
+
+	( *pOutSrcFine ) = src.fine;
+	( *pOutDstFine ) = dst.fine;
+
+	return Min( src.mipmaps, dst.mipmaps );
+}
+
+void CShaderAPIDx8::CopyTextureToTexture( ShaderAPITextureHandle_t srcTex, ShaderAPITextureHandle_t dstTex )
+{
+	LOCK_SHADERAPI();
+
+	AssertValidTextureHandle( srcTex );
+	AssertValidTextureHandle( dstTex );
+
+	Assert( TextureIsAllocated( srcTex ) && TextureIsAllocated( dstTex ) );
+
+	Texture_t *pSrcTex = &GetTexture( srcTex );
+	Texture_t *pDstTex = &GetTexture( dstTex );
+
+	Assert( pSrcTex && pDstTex );
+
+	// Must have same image format
+	Assert( pSrcTex->GetImageFormat() == pDstTex->GetImageFormat() );
+
+	int srcFine = 0,
+		dstFine = 0;
+	
+	int mipmapCount = FindCommonMipmapRange( &srcFine, &dstFine, pSrcTex, pDstTex );
+	
+	if ( mipmapCount <= 0 )
+	{
+		// This is legit for things that are streamed in that are very small (near the 32x32 cutoff we do at the 
+		// tip of the mipmap pyramid). But leaving it here because it's useful if you're tracking a specific bug.
+		// Warning( "Attempted to copy textures that had non-overlapping mipmap pyramids. This has failed and no copy has taken place.\n" );
+		return;
+	}
+
+	IDirect3DTexture* pSrcD3DTex = ( IDirect3DTexture * ) pSrcTex->GetTexture();
+	IDirect3DTexture* pDstD3DTex = ( IDirect3DTexture * ) pDstTex->GetTexture();
+
+	HRESULT hr = S_OK;
+	for ( int i = 0; i < mipmapCount; ++i )
+	{
+		int srcMipmap = srcFine + i;
+		int dstMipmap = dstFine + i;
+
+		IDirect3DSurface9* pSrcSurf = NULL;
+		IDirect3DSurface9* pDstSurf = NULL;
+
+		hr = pSrcD3DTex->GetSurfaceLevel( srcMipmap, &pSrcSurf );
+		Assert( SUCCEEDED( hr ) && pSrcSurf );
+
+		hr = pDstD3DTex->GetSurfaceLevel( dstMipmap, &pDstSurf );
+		Assert( SUCCEEDED( hr ) && pDstSurf );
+
+		hr = Dx9Device()->StretchRect( pSrcSurf, NULL, pDstSurf, NULL, D3DTEXF_NONE );
+		Assert( SUCCEEDED( hr ) );
+
+		pSrcSurf->Release();
+		pDstSurf->Release();
+	}
+}
+
+
+
 void CShaderAPIDx8::CopyRenderTargetToTexture( ShaderAPITextureHandle_t textureHandle )
 {
 	LOCK_SHADERAPI();
 	CopyRenderTargetToTextureEx( textureHandle, 0 );
 }
+
+
+void CShaderAPIDx8::CopyTextureToRenderTargetEx( int nRenderTargetID, ShaderAPITextureHandle_t textureHandle, Rect_t *pSrcRect, Rect_t *pDstRect )
+{
+	LOCK_SHADERAPI();
+	VPROF( "CShaderAPIDx8::CopyRenderTargetToTexture" );
+
+	if ( !TextureIsAllocated( textureHandle ) )
+		return;
+
+	// Don't flush here!!  If you have to flush here, then there is a driver bug.
+	// FlushHardware( );
+
+	AssertValidTextureHandle( textureHandle );
+	Texture_t *pTexture = &GetTexture( textureHandle );
+	Assert( pTexture );
+	IDirect3DTexture *pD3DTexture = (IDirect3DTexture *)pTexture->GetTexture();
+	Assert( pD3DTexture );
+
+#if !defined( _X360 )
+	IDirect3DSurface* pRenderTargetSurface;
+	HRESULT hr = Dx9Device()->GetRenderTarget( nRenderTargetID, &pRenderTargetSurface );
+	if ( FAILED( hr ) )
+	{
+		Assert( 0 );
+		return;
+	}
+
+	IDirect3DSurface *pDstSurf;
+	hr = pD3DTexture->GetSurfaceLevel( 0, &pDstSurf );
+	Assert( !FAILED( hr ) );
+	if ( FAILED( hr ) )
+	{
+		pRenderTargetSurface->Release();
+		return;
+	}
+
+	bool tryblit = true;
+	if ( tryblit )
+	{
+		RECORD_COMMAND( DX8_COPY_FRAMEBUFFER_TO_TEXTURE, 1 );
+		RECORD_INT( textureHandle );
+
+		RECT srcRect, dstRect;
+		hr = Dx9Device()->StretchRect( pDstSurf, RectToRECT( pSrcRect, srcRect ),
+			pRenderTargetSurface, RectToRECT( pDstRect, dstRect ), D3DTEXF_LINEAR );
+		Assert( !FAILED( hr ) );
+	}
+
+	pDstSurf->Release();
+	pRenderTargetSurface->Release();
+#else
+	Assert( 0 );
+#endif
+}
+
 
 //-----------------------------------------------------------------------------
 // modifies the vertex data when necessary
@@ -8909,7 +9605,7 @@ void CShaderAPIDx8::SpewBoardState()
 		boardState.m_UsingFixedFunction, m_DynamicState.m_VertexBlend );
 	Plat_DebugString(buf);
 	
-	sprintf(buf,"Pass Vertex Usage: %x Pixel Shader %p Vertex Shader %p\n",
+	sprintf(buf,"Pass Vertex Usage: %llx Pixel Shader %p Vertex Shader %p\n",
 		boardShaderState.m_VertexUsage, ShaderManager()->GetCurrentPixelShader(), 
 		ShaderManager()->GetCurrentVertexShader() );
 	Plat_DebugString(buf);
@@ -9001,6 +9697,7 @@ void CShaderAPIDx8::SpewBoardState()
 		sprintf(buf,"	Mag Filter: %d Min Filter: %d Mip Filter: %d\n",
 			SamplerState(i).m_MagFilter, SamplerState(i).m_MinFilter,
 			SamplerState(i).m_MipFilter );
+		sprintf(buf,"   MaxMipLevel: %d\n", SamplerState(i).m_FinestMipmapLevel );
 		Plat_DebugString(buf);
 	}
 #else
@@ -9121,6 +9818,12 @@ void CShaderAPIDx8::CacheWorldSpaceCameraPosition()
 		   view( 3, 1 ) * view( 2, 1 ) + 
 		   view( 3, 2 ) * view( 2, 2 ) );
 	m_WorldSpaceCameraPositon[3] = 1.0f;
+
+	// Protect against zero, as some pixel shaders will divide by this in CalcWaterFogAlpha() in common_ps_fxc.h
+	if ( fabs( m_WorldSpaceCameraPositon[2] ) <= 0.00001f )
+	{
+		m_WorldSpaceCameraPositon[2] = 0.01f;
+	}
 }
 
 
@@ -9702,6 +10405,8 @@ void CShaderAPIDx8::SetupSelectionModeVisualizationState()
 	{
 		SetVertexShaderConstant( VERTEX_SHADER_VIEWPROJ, ident, 4 );
 		SetVertexShaderConstant( VERTEX_SHADER_MODELVIEWPROJ, ident, 4 );
+		float *pRowTwo = (float *)ident + 8;
+		SetVertexShaderConstant( VERTEX_SHADER_MODELVIEWPROJ_THIRD_ROW, pRowTwo, 1 ); // Row two of an identity matrix
 		SetVertexShaderConstant( VERTEX_SHADER_MODEL, ident, 3 * NUM_MODEL_TRANSFORMS );
 	}
 }
@@ -9710,14 +10415,85 @@ void CShaderAPIDx8::SetupSelectionModeVisualizationState()
 //-----------------------------------------------------------------------------
 // Set view transforms
 //-----------------------------------------------------------------------------
+
+static void printmat4x4( char *label, float *m00 )
+{
+	// print label..
+	// fetch 4 from row, print as a row
+	// fetch 4 from column, print as a row
+	
+#ifdef DX_TO_GL_ABSTRACTION
+	float	row[4];
+	float	col[4];
+	
+	GLMPRINTF(("-M-    -- %s --", label ));
+	for( int n=0; n<4; n++ )
+	{
+		// extract row and column floats
+		for( int i=0; i<4;i++)
+		{
+			row[i] = m00[(n*4)+i];			
+			col[i] = m00[(i*4)+n];
+		}
+		GLMPRINTF((		"-M-    [ %7.4f %7.4f %7.4f %7.4f ] T=> [ %7.4f %7.4f %7.4f %7.4f ]",
+						row[0],row[1],row[2],row[3],
+						col[0],col[1],col[2],col[3]						
+						));
+	}
+	GLMPRINTF(("-M-"));
+#endif
+}
+
 void CShaderAPIDx8::SetVertexShaderViewProj()
 {
 	if (g_pHardwareConfig->Caps().m_SupportsPixelShaders)
 	{
-		D3DXMATRIX transpose = GetTransform(MATERIAL_VIEW) *
-								GetProjectionMatrix();
-		D3DXMatrixTranspose( &transpose, &transpose );
+		D3DXMATRIX transpose;
+		if(0)
+		{
+			transpose = GetTransform(MATERIAL_VIEW) * GetProjectionMatrix();
+			D3DXMatrixTranspose( &transpose, &transpose );
+		}
+		else
+		{
+			// show work
+			D3DXMATRIX	matView,matProj;
+			
+			matView		= GetTransform(MATERIAL_VIEW);
+			matProj		= GetProjectionMatrix();
+			transpose	= matView * matProj;
+			
+			//printmat4x4( "matView", (float*)&matView );
+			//printmat4x4( "matProj", (float*)&matProj );
+			//printmat4x4( "result (view * proj) pre-transpose", (float*)&transpose );
+
+			D3DXMatrixTranspose( &transpose, &transpose );
+
+			#if 0	// turned off while we try to do fixup-Y in shader translate
+				if (IsPosix())			// flip all shader projection matrices for Y on GL since you can't have an upside-down viewport specification
+				{
+					// flip Y
+					transpose._21 *= -1.0f;
+					transpose._22 *= -1.0f;
+					transpose._23 *= -1.0f;
+					transpose._24 *= -1.0f;
+				}
+			#endif
+			
+			//printmat4x4( "result (view * proj) post-transpose", (float*)&transpose );
+		}
+
+		
 		SetVertexShaderConstant( VERTEX_SHADER_VIEWPROJ, transpose, 4 );
+
+		// If we're doing FastClip, the above viewproj matrix won't work well for
+		// vertex shaders which compute projPos.z, hence we'll compute a more useful
+		// viewproj and put the third row of it in another constant
+		transpose = GetTransform( MATERIAL_VIEW ) * GetTransform( MATERIAL_PROJECTION ); // Get the non-FastClip projection matrix
+		D3DXMatrixTranspose( &transpose, &transpose );
+
+		float *pRowTwo = (float *)transpose + 8;
+		SetVertexShaderConstant( VERTEX_SHADER_VIEWPROJ_THIRD_ROW, pRowTwo, 1 );
 	}
 }
 
@@ -9726,10 +10502,53 @@ void CShaderAPIDx8::SetVertexShaderModelViewProjAndModelView( void )
 	if (g_pHardwareConfig->Caps().m_SupportsPixelShaders)
 	{
 		D3DXMATRIX modelView, transpose;
-		D3DXMatrixMultiply( &modelView, &GetTransform(MATERIAL_MODEL), &GetTransform(MATERIAL_VIEW) );
-		D3DXMatrixMultiply( &transpose, &modelView, &GetProjectionMatrix() );
+		
+		if (0)
+		{
+			D3DXMatrixMultiply( &modelView, &GetTransform(MATERIAL_MODEL), &GetTransform(MATERIAL_VIEW) );
+			D3DXMatrixMultiply( &transpose, &modelView, &GetProjectionMatrix() );
+		}
+		else
+		{
+			// show work
+			D3DXMATRIX	matView,matProj,matModel;
+			
+			matModel	= GetTransform(MATERIAL_MODEL);
+			matView		= GetTransform(MATERIAL_VIEW);
+			matProj		= GetProjectionMatrix();
+			
+			D3DXMatrixMultiply( &modelView, &matModel, &matView );
+			D3DXMatrixMultiply( &transpose, &modelView, &matProj );
+			
+			//printmat4x4( "matModel", (float*)&matModel );
+			//printmat4x4( "matView", (float*)&matView );
+			//printmat4x4( "matProj", (float*)&matProj );
+			//printmat4x4( "result (model * view * proj) pre-transpose", (float*)&transpose );
+		}
+
 		D3DXMatrixTranspose( &transpose, &transpose );
+		
+		#if 0	// turned off while we try to do fixup-Y in shader translate
+			if (IsPosix())			// flip all shader projection matrices for Y on GL since you can't have an upside-down viewport specification
+			{
+				// flip Y
+				transpose._21 *= -1.0f;
+				transpose._22 *= -1.0f;
+				transpose._23 *= -1.0f;
+				transpose._24 *= -1.0f;
+			}
+		#endif
+		
 		SetVertexShaderConstant( VERTEX_SHADER_MODELVIEWPROJ, transpose, 4 );
+
+		// If we're doing FastClip, the above modelviewproj matrix won't work well for
+		// vertex shaders which compute projPos.z, hence we'll compute a more useful
+		// modelviewproj and put the third row of it in another constant
+		D3DXMatrixMultiply( &transpose, &modelView, &GetTransform( MATERIAL_PROJECTION ) ); // Get the non-FastClip projection matrix
+		D3DXMatrixTranspose( &transpose, &transpose );
+
+		float *pRowTwo = (float *)transpose + 8;
+		SetVertexShaderConstant( VERTEX_SHADER_MODELVIEWPROJ_THIRD_ROW, pRowTwo, 1 );
 	}
 }
 
@@ -9773,6 +10592,12 @@ void CShaderAPIDx8::SetVertexShaderStateSkinningMatrices()
 
 	m_DynamicState.m_TransformChanged[MATERIAL_MODEL] &= ~STATE_CHANGED_VERTEX_SHADER;
 	SetVertexShaderConstant( VERTEX_SHADER_MODEL, m_boneMatrix[0].Base(), matricesLoaded * 3, true );
+
+	// ###OSX### punting on OSX for now		
+#if defined( DX_TO_GL_ABSTRACTION ) && !defined( OSX )
+	Dx9Device()->SetMaxUsedVertexShaderConstantsHint( VERTEX_SHADER_MODEL + ( matricesLoaded * 3 ) );
+#endif
+
 }
 
 //-----------------------------------------------------------------------------
@@ -10725,9 +11550,15 @@ D3DCOLOR CShaderAPIDx8::GetActualClearColor( D3DCOLOR clearColor )
 //-----------------------------------------------------------------------------
 void CShaderAPIDx8::ClearBuffersObeyStencil( bool bClearColor, bool bClearDepth )
 {
+	//copy the clear color bool into the clear alpha bool
+	ClearBuffersObeyStencilEx( bClearColor, bClearColor, bClearDepth );
+}
+
+void CShaderAPIDx8::ClearBuffersObeyStencilEx( bool bClearColor, bool bClearAlpha, bool bClearDepth )
+{
 	LOCK_SHADERAPI();
 
-	if ( !bClearColor && !bClearDepth )
+	if ( !bClearColor && !bClearAlpha && !bClearDepth )
 		return;
 
 	FlushBufferedPrimitives();
@@ -10743,13 +11574,11 @@ void CShaderAPIDx8::ClearBuffersObeyStencil( bool bClearColor, bool bClearDepth 
 	r = ( clearColor >> 16 ) & 0xFF;
 	a = ( clearColor >> 24 ) & 0xFF;
 
-	ShaderUtil()->DrawClearBufferQuad( r, g, b, a, bClearColor, bClearDepth );
+	ShaderUtil()->DrawClearBufferQuad( r, g, b, a, bClearColor, bClearAlpha, bClearDepth );
 
 	// Reset user clip plane state
 	FlushBufferedPrimitives();
 	SetRenderState( D3DRS_CLIPPLANEENABLE, m_DynamicState.m_UserClipPlaneEnabled );
-
-
 }
 
 //-------------------------------------------------------------------------
@@ -10764,7 +11593,7 @@ void CShaderAPIDx8::PerformFullScreenStencilOperation( void )
 	// We'll be drawing a large quad in altered worldspace, user clip planes must be disabled
 	SetRenderState( D3DRS_CLIPPLANEENABLE, 0 );
 
-	ShaderUtil()->DrawClearBufferQuad( 0, 0, 0, 0, false, false );
+	ShaderUtil()->DrawClearBufferQuad( 0, 0, 0, 0, false, false, false );
 
 	// Reset user clip plane state
 	FlushBufferedPrimitives();
@@ -10823,6 +11652,7 @@ void CShaderAPIDx8::ClearBuffers( bool bClearColor, bool bClearDepth, bool bClea
 #if !defined( _X360 )
 	if ( bSRGBWriteEnable )
 	{
+		// This path used to be !IsPosix(), but this makes no sense and causes the clear color to differ in D3D9 vs. GL.
 		Dx9Device()->SetRenderState( D3DRS_SRGBWRITEENABLE, 0 );
 	}
 #endif
@@ -10833,6 +11663,7 @@ void CShaderAPIDx8::ClearBuffers( bool bClearColor, bool bClearDepth, bool bClea
 	{
 		bool bRenderTargetMatchesViewport = 
 			( renderTargetWidth == -1 && renderTargetHeight == -1 ) ||
+			( m_DesiredState.m_Viewport.Width == -1 && m_DesiredState.m_Viewport.Height == -1 ) ||
 			( renderTargetWidth ==  ( int )m_DesiredState.m_Viewport.Width &&
 			  renderTargetHeight == ( int )m_DesiredState.m_Viewport.Height );
 
@@ -11006,11 +11837,13 @@ IDirect3DSurface* CShaderAPIDx8::GetBackBufferImageHDR( Rect_t *pSrcRect, Rect_t
 
 	// Find about its size and format
 	D3DSURFACE_DESC desc;
+	D3DTEXTUREFILTERTYPE filter;
+	
 	hr = pBackBuffer->GetDesc( &desc );
 	if (FAILED(hr))
 		goto CleanUp;
 
-	D3DTEXTUREFILTERTYPE filter = ((pDstRect->width != pSrcRect->width) || (pDstRect->height != pSrcRect->height)) ? D3DTEXF_LINEAR : D3DTEXF_NONE;
+	filter = ((pDstRect->width != pSrcRect->width) || (pDstRect->height != pSrcRect->height)) ? D3DTEXF_LINEAR : D3DTEXF_NONE;
 
 	if ( ( pDstRect->x + pDstRect->width <= SMALL_BACK_BUFFER_SURFACE_WIDTH ) && 
 		 ( pDstRect->y + pDstRect->height <= SMALL_BACK_BUFFER_SURFACE_HEIGHT ) )
@@ -11023,7 +11856,11 @@ IDirect3DSurface* CShaderAPIDx8::GetBackBufferImageHDR( Rect_t *pSrcRect, Rect_t
 				NULL );
 		}
 		pTmpSurface = m_pSmallBackBufferFP16TempSurface;
+#if POSIX
+		pTmpSurface->AddRef( 0, "CShaderAPIDx8::GetBackBufferImageHDR public addref");
+#else
 		pTmpSurface->AddRef();
+#endif
 
 		desc.Width = SMALL_BACK_BUFFER_SURFACE_WIDTH;
 		desc.Height = SMALL_BACK_BUFFER_SURFACE_HEIGHT;
@@ -11114,6 +11951,8 @@ IDirect3DSurface* CShaderAPIDx8::GetBackBufferImage( Rect_t *pSrcRect, Rect_t *p
 
 	IDirect3DSurface *pSurfaceBits = NULL;
 	IDirect3DSurface *pTmpSurface = NULL;
+	int nRenderTargetRefCount;
+	nRenderTargetRefCount = 0;
 
 	if ( (desc.MultiSampleType == D3DMULTISAMPLE_NONE) && (pRenderTarget != m_pBackBufferSurface) && 
 		 (pSrcRect->width == pDstRect->width) && (pSrcRect->height == pDstRect->height) )
@@ -11121,7 +11960,11 @@ IDirect3DSurface* CShaderAPIDx8::GetBackBufferImage( Rect_t *pSrcRect, Rect_t *p
 		// Don't bother to blit through the full-screen texture if we don't
 		// have to stretch, we're not coming from the backbuffer, and we don't have to do AA resolve
 		pTmpSurface = pRenderTarget;
+#if POSIX
+		pTmpSurface->AddRef( 0, "CShaderAPIDx8::GetBackBufferImage public addref");
+#else
 		pTmpSurface->AddRef();
+#endif
 	}
 	else
 	{
@@ -11188,10 +12031,10 @@ IDirect3DSurface* CShaderAPIDx8::GetBackBufferImage( Rect_t *pSrcRect, Rect_t *p
 
 	pTmpSurface->Release();
 #ifdef _DEBUG
-	int nRenderTargetRefCount = 
+	nRenderTargetRefCount = 
 #endif
 		pRenderTarget->Release();
-	Assert( nRenderTargetRefCount == 1 );
+	AssertOnce( nRenderTargetRefCount == 1 );
 	return pSurfaceBits;
 
 CleanUp:
@@ -11228,6 +12071,9 @@ void CShaderAPIDx8::CopyBitsFromHostSurface( IDirect3DSurface* pSurfaceBits,
 	D3DLOCKED_RECT lockedRect;
 	HRESULT hr;
 	int flags = D3DLOCK_READONLY | D3DLOCK_NOSYSLOCK;
+
+	tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "%s", __FUNCTION__ );
+
 	hr = pSurfaceBits->LockRect( &lockedRect, &rect, flags );
 	if ( !FAILED( hr ) )
 	{
@@ -11735,8 +12581,15 @@ void CShaderAPIDx8::GetDX9LightState( LightState_t *state ) const
 		Assert( m_DynamicState.m_NumLights <= (MAX_LIGHTS-2) );	// 2.0 hardware gets two less
 	}
 
+#ifdef OSX
+	state->m_nNumLights = MIN(MAX_NUM_LIGHTS, m_DynamicState.m_NumLights);
+#else
 	state->m_nNumLights = m_DynamicState.m_NumLights;
-	state->m_bStaticLight = m_pRenderMesh->HasColorMesh();
+#endif	
+	
+	state->m_nNumLights = m_DynamicState.m_NumLights;
+	state->m_bStaticLightVertex = m_pRenderMesh->HasColorMesh();
+	state->m_bStaticLightTexel = false; // For now
 }
 
 MaterialFogMode_t CShaderAPIDx8::GetCurrentFogType( void ) const
@@ -11754,6 +12607,11 @@ void CShaderAPIDx8::EvictManagedResourcesInternal()
 	if ( IsX360() )
 		return;
 
+	if ( !ThreadOwnsDevice() || !ThreadInMainThread() )
+	{
+		ShaderUtil()->OnThreadEvent( SHADER_THREAD_EVICT_RESOURCES );
+		return;
+	}
 	if ( mat_debugalttab.GetBool() )
 	{
 		Warning( "mat_debugalttab: CShaderAPIDx8::EvictManagedResourcesInternal\n" );
@@ -11775,7 +12633,7 @@ void CShaderAPIDx8::EvictManagedResources( void )
 	}
 
 	LOCK_SHADERAPI();
-
+	Assert(ThreadOwnsDevice());
 	// Tell other material system applications to release resources
 	SendIPCMessage( EVICT_MESSAGE );
 	EvictManagedResourcesInternal();
@@ -11875,12 +12733,14 @@ int CShaderAPIDx8::OcclusionQuery_GetNumPixelsRendered( ShaderAPIOcclusionQuery_
 	LOCK_SHADERAPI();
 	IDirect3DQuery9 *pQuery = (IDirect3DQuery9 *)handle;
 
+	tmZone( TELEMETRY_LEVEL1, TMZF_NONE, "%s", __FUNCTION__ );
+
 	DWORD nPixels;
 	HRESULT hResult = pQuery->GetData( &nPixels, sizeof( nPixels ), bFlush ? D3DGETDATA_FLUSH : 0 );
 
 	// This means that the query will not finish and resulted in an error, game should use
 	// the previous query's results and not reissue the query
-	if ( hResult == D3DERR_DEVICELOST )
+	if ( ( hResult == D3DERR_DEVICELOST ) || ( hResult == D3DERR_NOTAVAILABLE ) )
 		return OCCLUSION_QUERY_RESULT_ERROR;
 
 	// This means the query isn't finished yet, game will have to use the previous query's
@@ -11918,7 +12778,14 @@ void CShaderAPIDx8::SetPixelShaderFogParams( int reg, ShaderFogMode_t fogMode )
 		fogParams[0] = ooFogRange * fEnd; // end / ( fogEnd - fogStart )
 		fogParams[1] = m_DynamicState.m_FogZ; // water height
 		fogParams[2] = clamp( m_flFogMaxDensity, 0.0f, 1.0f ); // Max fog density
-		fogParams[3] = ooFogRange; // 1 / ( fogEnd - fogStart );		
+		fogParams[3] = ooFogRange;				// 1 / ( fogEnd - fogStart );
+
+		if (GetPixelFogMode() == MATERIAL_FOG_LINEAR_BELOW_FOG_Z)
+		{
+			// terms are unused for height fog, forcing 1.0 allows unified PS math
+			fogParams[0] = 0.0f;
+			fogParams[2] = 1.0f;
+		}
 	}
 	else
 	{
@@ -12004,11 +12871,6 @@ bool CShaderAPIDx8::SupportsCSAAMode( int nNumSamples, int nQualityLevel )
 bool CShaderAPIDx8::SupportsShadowDepthTextures( void )
 {
 	return g_pHardwareConfig->Caps().m_bSupportsShadowDepthTextures;
-}
-
-bool CShaderAPIDx8::SupportsNormalMapCompression( void ) const
-{
-	return g_pHardwareConfig->Caps().m_bSupportsNormalMapCompression;
 }
 
 bool CShaderAPIDx8::SupportsBorderColor( void ) const
@@ -12133,6 +12995,28 @@ void CShaderAPIDx8::EnableLinearColorSpaceFrameBuffer( bool bEnable )
 	LOCK_SHADERAPI();
 	m_TransitionTable.EnableLinearColorSpaceFrameBuffer( bEnable );
 }
+
+
+void CShaderAPIDx8::SetPSNearAndFarZ( int pshReg )
+{
+	VMatrix m;
+	GetMatrix( MATERIAL_PROJECTION, m.m[0] );
+
+	// m[2][2] =  F/(N-F)   (flip sign if RH)
+	// m[3][2] = NF/(N-F)
+
+	float vNearFar[4];
+
+	float N =     m[3][2] / m[2][2];
+	float F = (m[3][2]*N) / (N + m[3][2]);
+
+	vNearFar[0] = N;
+	vNearFar[1] = F;
+
+
+	SetPixelShaderConstant( pshReg, vNearFar, 1 );
+}
+
 
 void CShaderAPIDx8::SetFloatRenderingParameter( int parm_number, float value )
 {
@@ -13122,6 +14006,50 @@ bool CShaderAPIDx8::SetRenderTargetInternalXbox( ShaderAPITextureHandle_t hRende
 	return true;
 }
 
+
+//-----------------------------------------------------------------------------
+// debug logging
+//-----------------------------------------------------------------------------
+void CShaderAPIDx8::PrintfVA( char *fmt, va_list vargs )
+{
+#ifdef DX_TO_GL_ABSTRACTION
+	#if GLMDEBUG
+		GLMPrintfVA( fmt, vargs );
+	#endif
+#else
+	AssertOnce( !"Impl me" );
+#endif
+}
+
+void CShaderAPIDx8::Printf( const char *fmt, ... )
+{
+#ifdef DX_TO_GL_ABSTRACTION
+	#if GLMDEBUG
+		va_list	vargs;
+
+		va_start(vargs, fmt);
+
+		GLMPrintfVA( fmt, vargs );
+
+		va_end( vargs );
+	#endif
+#else
+	AssertOnce( !"Impl me" );
+#endif
+}
+
+float CShaderAPIDx8::Knob( char *knobname, float *setvalue )
+{
+#ifdef DX_TO_GL_ABSTRACTION
+	#if GLMDEBUG
+		return GLMKnob( knobname, setvalue );
+	#else
+		return 0.0f;
+	#endif
+#else
+	return 0.0f;
+#endif
+}
 
 
 

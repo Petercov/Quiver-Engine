@@ -91,9 +91,6 @@ private:
 	// Initialize adapter information
 	void InitAdapterInfo();
 
-	// Code to detect support for ATI2N and ATI1N formats for normal map compression
-	void CheckNormalCompressionSupport( HardwareCaps_t *pCaps, int nAdapter );
-
 	// Code to detect support for texture border mode (not a simple caps check)
 	void CheckBorderColorSupport( HardwareCaps_t *pCaps, int nAdapter );
 
@@ -138,6 +135,8 @@ inline IDirect3D9* D3D()
 
 #endif
 
+#define NUM_FRAME_SYNC_QUERIES 2
+#define NUM_FRAME_SYNC_FRAMES_LATENCY 0
 
 //-----------------------------------------------------------------------------
 // The Dx8implementation of the shader device
@@ -172,6 +171,7 @@ public:
 	virtual int GetCurrentAdapter() const;
 	virtual void EnableNonInteractiveMode( MaterialNonInteractiveMode_t mode, ShaderNonInteractiveInfo_t *pInfo = NULL );
 	virtual void RefreshFrontBufferNonInteractive();
+	virtual char *GetDisplayDeviceName() OVERRIDE; 
 
 	// Alternative method for ib/vs
 	// NOTE: If this works, remove GetDynamicVertexBuffer/IndexBuffer
@@ -190,6 +190,9 @@ public:
 
 	// Call this when another app is initializing or finished initializing
 	virtual void OtherAppInitializing( bool initializing );
+	
+	// This handles any events queued because they were called outside of the owning thread
+	virtual void HandleThreadEvent( uint32 threadEvent );
 
 	// FIXME: Make private
 	// Which device are we using?
@@ -297,6 +300,7 @@ protected:
 	bool				m_IsResizing : 1;
 	bool				m_bPendingVideoModeChange : 1;
 	bool				m_bUsingStencil : 1;
+	bool				m_bResourcesReleased : 1;
 
 	// amount of stencil variation we have available
 	int					m_iStencilBufferBits;
@@ -305,13 +309,17 @@ protected:
 	CON_COMMAND_MEMBER_F( CShaderDeviceDx8, "360vidinfo", SpewVideoInfo360, "Get information on the video mode on the 360", 0 );
 #endif
 
-	// Frame synch objects
-	IDirect3DQuery9		*m_pFrameSyncQueryObject;
+	// Frame sync objects
+	IDirect3DQuery9		*m_pFrameSyncQueryObject[NUM_FRAME_SYNC_QUERIES];
+	bool				m_bQueryIssued[NUM_FRAME_SYNC_QUERIES];
+	int					m_currentSyncQuery;
 	IDirect3DTexture9	*m_pFrameSyncTexture;
 
 #if defined( _X360 )
 	HXUIDC m_hDC;
 #endif
+
+	CUtlString			m_sDisplayDeviceName;
 
 	// Used for x360 only
 	NonInteractiveRefreshState_t m_NonInteractiveRefresh;

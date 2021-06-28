@@ -56,9 +56,6 @@ int CShaderAPI::GetShadowFilterMode() const
 	return 0;
 }
 
-float CShaderAPI::GetShadowDepthBias() const { return 0; }
-float CShaderAPI::GetShadowSlopeScaleDepthBias() const { return 0; }
-
 int CShaderAPI::StencilBufferBits() const
 {
 	return 0;
@@ -142,6 +139,14 @@ bool CShaderAPI::SupportsShaderModel_3_0() const
 		return false;
 
 	return true;
+}
+
+bool CShaderAPI::SupportsStaticControlFlow() const
+{
+	if (IsOpenGL())
+		return false;
+
+	return SupportsVertexShaders_2_0();
 }
 
 bool CShaderAPI::SupportsVertexShaders_2_0() const
@@ -313,6 +318,21 @@ bool CShaderAPI::SupportsSRGB() const
 	return false;
 }
 
+bool CShaderAPI::FakeSRGBWrite() const
+{
+	return false;
+}
+
+bool CShaderAPI::CanDoSRGBReadFromRTs() const
+{
+	return true;
+}
+
+bool CShaderAPI::SupportsGLMixedSizeTargets() const
+{
+	return false;
+}
+
 const char *CShaderAPI::GetHWSpecificShaderDLLName() const
 {
 	return 0;
@@ -435,6 +455,13 @@ void CShaderAPI::OverrideDepthEnable( bool bEnable, bool bDepthEnable )
 {
 }
 
+void CShaderAPI::OverrideAlphaWriteEnable(bool bOverrideEnable, bool bAlphaWriteEnable)
+{
+}
+
+void CShaderAPI::OverrideColorWriteEnable(bool bOverrideEnable, bool bColorWriteEnable)
+{
+}
 
 //legacy fast clipping linkage
 void CShaderAPI::SetHeightClipZ( float z )
@@ -762,7 +789,7 @@ void CShaderAPI::SetLinearToGammaConversionTextures( ShaderAPITextureHandle_t hS
 
 
 // Returns the nearest supported format
-ImageFormat CShaderAPI::GetNearestSupportedFormat( ImageFormat fmt ) const
+ImageFormat CShaderAPI::GetNearestSupportedFormat( ImageFormat fmt, bool ) const
 {
 	return fmt;
 }
@@ -800,6 +827,10 @@ void CShaderAPI::TexImage2D( int level, int cubeFace, ImageFormat dstFormat, int
 
 void CShaderAPI::TexSubImage2D( int level, int cubeFace, int xOffset, int yOffset, int zOffset, int width, int height,
 						 ImageFormat srcFormat, int srcStride, bool bSrcIsTiled, void *imageData )
+{
+}
+
+void CShaderAPI::TexImageFromVTF(IVTFTexture* pVTF, int iVTFFrame)
 {
 }
 
@@ -889,6 +920,10 @@ void CShaderAPI::ClearBuffers( bool bClearColor, bool bClearDepth, bool bClearSt
 }
 
 void CShaderAPI::ClearBuffersObeyStencil( bool bClearColor, bool bClearDepth )
+{
+}
+
+void CShaderAPI::ClearBuffersObeyStencilEx(bool bClearColor, bool bClearAlpha, bool bClearDepth)
 {
 }
 
@@ -1020,7 +1055,8 @@ void CShaderAPI::GetDX9LightState( LightState_t *state ) const
 {
 	state->m_nNumLights = 0;
 	state->m_bAmbientLight = false;
-	state->m_bStaticLight = false;
+	state->m_bStaticLightVertex = false;
+	state->m_bStaticLightTexel = false;
 }
 
 MaterialFogMode_t CShaderAPI::GetCurrentFogType( void ) const

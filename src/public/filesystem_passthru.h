@@ -230,6 +230,20 @@ public:
 		{ m_pFileSystemPassThru->SetWhitelistSpewFlags( spewFlags ); }
 	virtual void InstallDirtyDiskReportFunc( FSDirtyDiskReportFunc_t func ) { m_pFileSystemPassThru->InstallDirtyDiskReportFunc( func ); }
 
+	virtual FileCacheHandle_t CreateFileCache() { return m_pFileSystemPassThru->CreateFileCache(); }
+	virtual void AddFilesToFileCache(FileCacheHandle_t cacheId, const char** ppFileNames, int nFileNames, const char* pPathID) { m_pFileSystemPassThru->AddFilesToFileCache(cacheId, ppFileNames, nFileNames, pPathID); }
+	virtual bool IsFileCacheFileLoaded(FileCacheHandle_t cacheId, const char* pFileName) { return m_pFileSystemPassThru->IsFileCacheFileLoaded(cacheId, pFileName); }
+	virtual bool IsFileCacheLoaded(FileCacheHandle_t cacheId) { return m_pFileSystemPassThru->IsFileCacheLoaded(cacheId); }
+	virtual void DestroyFileCache(FileCacheHandle_t cacheId) { m_pFileSystemPassThru->DestroyFileCache(cacheId); }
+
+	virtual bool RegisterMemoryFile(CMemoryFileBacking* pFile, CMemoryFileBacking** ppExistingFileWithRef) { return m_pFileSystemPassThru->RegisterMemoryFile(pFile, ppExistingFileWithRef); }
+	virtual void UnregisterMemoryFile(CMemoryFileBacking* pFile) { m_pFileSystemPassThru->UnregisterMemoryFile(pFile); }
+
+	virtual void			NotifyFileUnloaded(const char* pszFilename, const char* pPathId) OVERRIDE
+	{
+		m_pFileSystemPassThru->NotifyFileUnloaded(pszFilename, pPathId);
+	}
+
 protected:
 	IFileSystem *m_pFileSystemPassThru;
 };

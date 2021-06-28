@@ -37,6 +37,9 @@ cloak_vs20.fxc
 
 colorcorrection_ps2x.fxc
 
+compositor_ps2x.fxc
+compositor_vs20.fxc
+
 constant_color_ps2x.fxc
 
 copy_fp_rt_ps2x.fxc

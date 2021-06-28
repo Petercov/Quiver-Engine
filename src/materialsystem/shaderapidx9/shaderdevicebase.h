@@ -38,6 +38,10 @@ class KeyValues;
 //-----------------------------------------------------------------------------
 //#define USE_REFERENCE_RASTERIZER 1
 
+//-----------------------------------------------------------------------------
+// Uncomment to check for -nulldevice on command line and use D3DDEVTYPE_NULLREF.
+//-----------------------------------------------------------------------------
+#define ENABLE_NULLREF_DEVICE_SUPPORT
 
 //-----------------------------------------------------------------------------
 // The Base implementation of the shader device
@@ -161,6 +165,9 @@ protected:
 	// IPC communication for multiple shaderapi apps
 	void InstallWindowHook( void *hWnd );
 	void RemoveWindowHook( void *hWnd );
+	void SetCurrentThreadAsOwner();
+	void RemoveThreadOwner();
+	bool ThreadOwnsDevice();
 
 	// Finds a child window
 	int  FindView( void* hWnd ) const;
@@ -176,6 +183,7 @@ protected:
 
 	int	m_nWindowWidth;
 	int m_nWindowHeight;
+	uint32 m_dwThreadId;
 };
 
 

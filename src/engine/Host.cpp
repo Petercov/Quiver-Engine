@@ -1303,6 +1303,7 @@ void Host_ShutdownServer( void )
 	if ( !sv.IsActive() )
 		return;
 
+	Host_AllowQueuedMaterialSystem(false);
 	// clear structures
 #if !defined( SWDS )
 	g_pShadowMgr->LevelShutdown();
@@ -4146,44 +4147,12 @@ void Host_Shutdown(void)
 //-----------------------------------------------------------------------------
 // Centralize access to enabling QMS.
 //-----------------------------------------------------------------------------
-void Host_AllowQueuedMaterialSystem( bool bAllow )
+bool Host_AllowQueuedMaterialSystem( bool bAllow )
 {
-#if defined _WIN32 && !defined SWDS
-	if ( IsPC() )
-	{
-		// not enabled for PC yet
-		return;
-	}
-	
-	static ConVar *pMatQueueMode = g_pCVar->FindVar( "mat_queue_mode" );
-	static int iConVarThreadMode = -1;
-
-	bool bQueued = g_pMaterialSystem->GetThreadMode() != MATERIAL_SINGLE_THREADED;
-	if ( bAllow && !bQueued )
-	{
-		// go into queued mode
-		DevMsg( "Queued Material System: ENABLED!\n" );
-		g_pMaterialSystem->SetThreadMode( MATERIAL_QUEUED_THREADED, g_nMaterialSystemThread );
-		if ( iConVarThreadMode != -1 )
-		{
-			pMatQueueMode->SetValue( iConVarThreadMode );
-		}
-	}
-	else if ( !bAllow && bQueued )
-	{
-		// disabling queued mode just needs to stop the queuing of drawing
-		// but still allow other threaded access to the Material System
-		// flush the queue
-		DevMsg( "Queued Material System: DISABLED!\n" );
-		MaterialLock_t hMaterialLock = g_pMaterialSystem->Lock();
-		g_pMaterialSystem->SetThreadMode( MATERIAL_SINGLE_THREADED );
-		g_pMaterialSystem->Unlock( hMaterialLock );
-
-		if ( pMatQueueMode )
-		{
-			iConVarThreadMode = pMatQueueMode->GetInt();
-			pMatQueueMode->SetValue( -1 );
-		}
-	}
+#if !defined DEDICATED
+	// g_bAllowThreadedSound = bAllow;
+	// NOTE: Moved this to materialsystem for integrating with other mqm changes
+	return g_pMaterialSystem->AllowThreading(bAllow, g_nMaterialSystemThread);
 #endif
+	return false;
 }
