@@ -76,7 +76,8 @@ CSentenceMixer::CSentenceMixer( voxword_t *pWords )
 	while ( pWords[m_nNumWords].sfx != NULL )
 	{
 		// get a private copy of the words
-		m_VoxWords[m_nNumWords] = pWords[m_nNumWords++];
+		m_VoxWords[m_nNumWords] = pWords[m_nNumWords];
+		m_nNumWords++;
 		if ( m_nNumWords >= ARRAYSIZE( m_VoxWords ) )
 		{
 			// very long sentence, prevent overflow

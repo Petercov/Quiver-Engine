@@ -1311,7 +1311,7 @@ size_t CopyWorkerReplyPackage( CfgProcessor::CfgEntryInfo const *pEntry, uint64 
 template < typename TMutexType >
 class CWorkerAccumState : public CParallelProcessorBase < CWorkerAccumState < TMutexType > >
 {
-	friend ThisParallelProcessorBase_t;
+	friend CParallelProcessorBase < CWorkerAccumState < TMutexType > >::ThisParallelProcessorBase_t;
 
 private:
 	static bool & DisconnectState() { static bool sb = false; return sb; }
@@ -1337,7 +1337,7 @@ public:
 	void HandleCommandResponse( CfgProcessor::ComboHandle hCombo, CmdSink::IResponse *pResponse );
 
 public:
-	using ThisParallelProcessorBase_t::Run;
+	using CParallelProcessorBase < CWorkerAccumState < TMutexType > >::ThisParallelProcessorBase_t::Run;
 
 public:
 	bool OnProcess();
