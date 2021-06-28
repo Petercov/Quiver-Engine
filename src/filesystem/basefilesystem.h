@@ -207,6 +207,7 @@ abstract_class CBaseFileSystem : public CTier1AppSystem< IFileSystem >
 	friend class CPackFile;
 	friend class CXZipPackFile;
 	friend class CVPKFile;
+	friend class CGMAFile;
 	friend class CFileHandle;
 	friend class CFileTracker;
 	friend class CFileOpenInfo;
@@ -712,6 +713,7 @@ protected:
 	void						RemoveAllMapSearchPaths( void );
 	void						AddMapPackFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType );
 	void						AddVPKFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType );
+	void						AddGMAFile(const char* pPath, const char* pPathID, SearchPathAdd_t addType);
 	void						AddPackFiles( const char *pPath, const CUtlSymbol &pathID, SearchPathAdd_t addType );
 	bool						PreparePackFile( CPackFile &packfile, int offsetofpackinmetafile, int64 filelen );
 

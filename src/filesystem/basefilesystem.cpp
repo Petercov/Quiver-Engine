@@ -44,6 +44,11 @@
 
 #include "packfile.h"
 
+#include "valve_minmax_off.h"
+#include <gmafile/AddonFormat.h>
+//#include <nlohmann/json.hpp>
+#include "valve_minmax_on.h"
+
 // memdbgon must be the last include file in a .cpp file!!!
 #include "tier0/memdbgon.h"
 
@@ -759,18 +764,18 @@ bool CBaseFileSystem::AddPackFileFromPath( const char *pPath, const char *pakfil
 		return false;
 
 	CPackFile *pf = new CZipPackFile( this );
-	pf->m_hPackFileHandle = Trace_FOpen( fullpath, "rb", 0, NULL );
+	pf->m_hPackFileHandleFS = Trace_FOpen( fullpath, "rb", 0, NULL );
 
 	// Get the length of the pack file:
-	FS_fseek( ( FILE * )pf->m_hPackFileHandle, 0, FILESYSTEM_SEEK_TAIL );
-	int64 len = FS_ftell( ( FILE * )pf->m_hPackFileHandle );
-	FS_fseek( ( FILE * )pf->m_hPackFileHandle, 0, FILESYSTEM_SEEK_HEAD );
+	FS_fseek( ( FILE * )pf->m_hPackFileHandleFS, 0, FILESYSTEM_SEEK_TAIL );
+	int64 len = FS_ftell( ( FILE * )pf->m_hPackFileHandleFS);
+	FS_fseek( ( FILE * )pf->m_hPackFileHandleFS, 0, FILESYSTEM_SEEK_HEAD );
 
 	if ( !pf->Prepare( len ) )
 	{
 		// Failed for some reason, ignore it
-		Trace_FClose( pf->m_hPackFileHandle );
-		pf->m_hPackFileHandle = NULL;
+		Trace_FClose( pf->m_hPackFileHandleFS);
+		pf->m_hPackFileHandleFS = NULL;
 		delete pf;
 
 		return false;
@@ -946,20 +951,20 @@ void CBaseFileSystem::AddPackFiles( const char *pPath, const CUtlSymbol &pathID,
 			m_ZipFiles.AddToTail( pf );
 			sp->SetPackFile( pf );
 			pf->m_lPackFileTime = GetFileTime( fullpath );
-			pf->m_hPackFileHandle = Trace_FOpen( fullpath, "rb", 0, NULL );
-			FS_setbufsize( pf->m_hPackFileHandle, 32*1024 );	// 32k buffer.
+			pf->m_hPackFileHandleFS = Trace_FOpen( fullpath, "rb", 0, NULL );
+			FS_setbufsize( pf->m_hPackFileHandleFS, 32*1024 );	// 32k buffer.
 
 			if ( pf->Prepare( pakSizes[i] ) )
 			{
-				FS_setbufsize( pf->m_hPackFileHandle, filesystem_buffer_size.GetInt() );
+				FS_setbufsize( pf->m_hPackFileHandleFS, filesystem_buffer_size.GetInt() );
 			}
 			else
 			{
 				// Failed for some reason, ignore it
-				if ( pf->m_hPackFileHandle )
+				if ( pf->m_hPackFileHandleFS)
 				{
-					Trace_FClose( pf->m_hPackFileHandle );
-					pf->m_hPackFileHandle = NULL;
+					Trace_FClose( pf->m_hPackFileHandleFS);
+					pf->m_hPackFileHandleFS = NULL;
 				}
 				m_SearchPaths.Remove( nIndex );
 			}
@@ -989,28 +994,28 @@ void CBaseFileSystem::RemoveAllMapSearchPaths( void )
 //-----------------------------------------------------------------------------
 // Purpose: 
 //-----------------------------------------------------------------------------
-void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, SearchPathAdd_t addType )
+void CBaseFileSystem::AddMapPackFile(const char* pPath, const char* pPathID, SearchPathAdd_t addType)
 {
 	char tempPathID[MAX_PATH];
-	ParsePathID( pPath, pPathID, tempPathID );
+	ParsePathID(pPath, pPathID, tempPathID);
 
-	char newPath[ MAX_FILEPATH ];
+	char newPath[MAX_FILEPATH];
 	// +2 for '\0' and potential slash added at end.
-	Q_strncpy( newPath, pPath, sizeof( newPath ) );
+	Q_strncpy(newPath, pPath, sizeof(newPath));
 #ifdef _WIN32 // don't do this on linux!
-	Q_strlower( newPath );
+	Q_strlower(newPath);
 #endif
-	Q_FixSlashes( newPath );
+	Q_FixSlashes(newPath);
 
 	// Open the .bsp and find the map lump
-	char fullpath[ MAX_FILEPATH ];
-	if ( Q_IsAbsolutePath( newPath ) ) // If it's an absolute path, just use that.
+	char fullpath[MAX_FILEPATH];
+	if (Q_IsAbsolutePath(newPath)) // If it's an absolute path, just use that.
 	{
-		Q_strncpy( fullpath, newPath, sizeof(fullpath) );
+		Q_strncpy(fullpath, newPath, sizeof(fullpath));
 	}
 	else
 	{
-		if ( !GetLocalPath( newPath, fullpath, sizeof(fullpath) ) )
+		if (!GetLocalPath(newPath, fullpath, sizeof(fullpath)))
 		{
 			// Couldn't find that .bsp file!!!
 			return;
@@ -1018,12 +1023,12 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 	}
 
 	int c = m_SearchPaths.Count();
-	for ( int i = c - 1; i >= 0; i-- )
+	for (int i = c - 1; i >= 0; i--)
 	{
-		if ( !( m_SearchPaths[i].GetPackFile() && m_SearchPaths[i].GetPackFile()->m_bIsMapPath ) )
+		if (!(m_SearchPaths[i].GetPackFile() && m_SearchPaths[i].GetPackFile()->m_bIsMapPath))
 			continue;
-		
-		if ( Q_stricmp( m_SearchPaths[i].GetPackFile()->m_PackName.Get(), fullpath ) == 0 )
+
+		if (Q_stricmp(m_SearchPaths[i].GetPackFile()->m_PackName.Get(), fullpath) == 0)
 		{
 			// Already set as map path
 			return;
@@ -1033,94 +1038,203 @@ void CBaseFileSystem::AddMapPackFile( const char *pPath, const char *pPathID, Se
 	// Remove previous
 	RemoveAllMapSearchPaths();
 
-	FILE *fp = Trace_FOpen( fullpath, "rb", 0, NULL );
-	if ( !fp )
+	CPackFile* pPackFile = nullptr;
+	for (int i = 0; i < c; i++)
 	{
-		// Couldn't open it
-		Warning( FILESYSTEM_WARNING, "Couldn't open .bsp %s for embedded pack file check\n", fullpath );
-		return;
-	}
+		if (!m_SearchPaths[i].GetPackFile() || m_SearchPaths[i].GetPackFile()->GetPackClass() == PACK_ZIP)
+			continue;
 
-	// Get the .bsp file header
-	dheader_t header;
-	memset( &header, 0, sizeof(dheader_t) );
-	m_Stats.nBytesRead += FS_fread( &header, sizeof( header ), fp );
-	m_Stats.nReads++;
-
-	if ( header.ident != IDBSPHEADER || header.version < MINBSPVERSION || header.version > BSPVERSION )
-	{
-		Trace_FClose( fp );
-		return;
-	}
-
-	// lump_t fix for l4d2 maps
-	if ( header.version == 21 && header.lumps[0].fileofs == 0 )
-	{
-		DevMsg( "Detected l4d2 bsp, fixing lump struct order for compatibility\n" );
-
-		l4d2_lump_t l4d2lump;
-		V_memcpy( &l4d2lump, &header.lumps[LUMP_PAKFILE], sizeof( lump_t ) );
-
-		header.lumps[LUMP_PAKFILE].version = l4d2lump.version;
-		header.lumps[LUMP_PAKFILE].filelen = l4d2lump.filelen;
-		header.lumps[LUMP_PAKFILE].fileofs = l4d2lump.fileofs;
-	}
-
-	// Find the LUMP_PAKFILE offset
-	lump_t *packfile = &header.lumps[ LUMP_PAKFILE ];
-	if ( packfile->filelen <= sizeof( lump_t ) )
-	{
-		// It's empty or only contains a file header ( so there are no entries ), so don't add to search paths
-		Trace_FClose( fp );
-		return;
-	}
-
-	// Seek to correct position
-	FS_fseek( fp, packfile->fileofs, FILESYSTEM_SEEK_HEAD );
-
-	CPackFile *pf = new CZipPackFile( this );
-
-	pf->m_bIsMapPath = true;
-	pf->m_hPackFileHandle = fp;
-
-	MEM_ALLOC_CREDIT();
-	pf->m_PackName = fullpath;
-
-	if ( pf->Prepare( packfile->filelen, packfile->fileofs ) )
-	{
-		int nIndex;
-		if ( addType == PATH_ADD_TO_TAIL )
+		if (V_stristr(fullpath, m_SearchPaths[i].GetPackFile()->m_PackName.Get()) != nullptr)
 		{
-			nIndex = m_SearchPaths.AddToTail();	
+			pPackFile = m_SearchPaths[i].GetPackFile();
+			break;
+		}
+	}
+
+	if (pPackFile)
+	{
+		const char* pszLocalPath = V_stristr(fullpath, "maps");
+		CFileHandle* fp = pPackFile->OpenFile(pszLocalPath, "rb");
+		if (!fp)
+		{
+			// Couldn't open it
+			Warning(FILESYSTEM_WARNING, "Couldn't open .bsp %s for embedded pack file check\n", fullpath);
+			return;
+		}
+
+		// Get the .bsp file header
+		dheader_t header;
+		memset(&header, 0, sizeof(dheader_t));
+		m_Stats.nBytesRead += fp->Read(&header, sizeof(header));
+		m_Stats.nReads++;
+
+		if (header.ident != IDBSPHEADER || header.version < MINBSPVERSION || header.version > BSPVERSION)
+		{
+			delete fp;
+			return;
+		}
+
+		// lump_t fix for l4d2 maps
+		if (header.version == 21 && header.lumps[0].fileofs == 0)
+		{
+			DevMsg("Detected l4d2 bsp, fixing lump struct order for compatibility\n");
+
+			l4d2_lump_t l4d2lump;
+			V_memcpy(&l4d2lump, &header.lumps[LUMP_PAKFILE], sizeof(lump_t));
+
+			header.lumps[LUMP_PAKFILE].version = l4d2lump.version;
+			header.lumps[LUMP_PAKFILE].filelen = l4d2lump.filelen;
+			header.lumps[LUMP_PAKFILE].fileofs = l4d2lump.fileofs;
+		}
+
+		// Find the LUMP_PAKFILE offset
+		lump_t* packfile = &header.lumps[LUMP_PAKFILE];
+		if (packfile->filelen <= sizeof(lump_t))
+		{
+			// It's empty or only contains a file header ( so there are no entries ), so don't add to search paths
+			delete fp;
+			return;
+		}
+
+		// Seek to correct position
+		fp->Seek(packfile->fileofs, FILESYSTEM_SEEK_HEAD);
+
+		CPackFile* pf = new CZipPackFile(this);
+
+		pf->m_bIsMapPath = true;
+		pf->m_hPackFileHandlePK = fp->m_pPackFileHandle;
+
+		fp->m_pPackFileHandle = nullptr;
+		delete fp;
+
+		MEM_ALLOC_CREDIT();
+		pf->m_PackName = fullpath;
+
+		if (pf->Prepare(packfile->filelen, packfile->fileofs))
+		{
+			int nIndex;
+			if (addType == PATH_ADD_TO_TAIL)
+			{
+				nIndex = m_SearchPaths.AddToTail();
+			}
+			else
+			{
+				nIndex = m_SearchPaths.AddToHead();
+			}
+
+			CSearchPath* sp = &m_SearchPaths[nIndex];
+
+			sp->SetPackFile(pf);
+			sp->m_storeId = g_iNextSearchPathID++;
+			sp->SetPath(g_PathIDTable.AddString(newPath));
+			sp->m_pPathIDInfo = FindOrAddPathIDInfo(g_PathIDTable.AddString(pPathID), -1);
+
+			if (IsX360() && !V_strnicmp(newPath, "net:", 4))
+			{
+				sp->m_bIsRemotePath = true;
+			}
+
+			pf->SetPath(sp->GetPath());
+			pf->m_lPackFileTime = pPackFile->m_lPackFileTime;
+
+			m_ZipFiles.AddToTail(pf);
 		}
 		else
 		{
-			nIndex = m_SearchPaths.AddToHead();	
+			delete pf;
 		}
-
-		CSearchPath *sp = &m_SearchPaths[ nIndex ];
-
-		sp->SetPackFile( pf );
-		sp->m_storeId = g_iNextSearchPathID++;
-		sp->SetPath( g_PathIDTable.AddString( newPath ) );
-		sp->m_pPathIDInfo = FindOrAddPathIDInfo( g_PathIDTable.AddString( pPathID ), -1 );
-
-		if ( IsX360() && !V_strnicmp( newPath, "net:", 4 ) )
-		{
-			sp->m_bIsRemotePath = true;
-		}
-
-		pf->SetPath( sp->GetPath() );
-		pf->m_lPackFileTime = GetFileTime( newPath );
-
-		Trace_FClose( pf->m_hPackFileHandle );
-		pf->m_hPackFileHandle = NULL;
-
-		m_ZipFiles.AddToTail( pf );
 	}
 	else
 	{
-		delete pf;
+		FILE* fp = Trace_FOpen(fullpath, "rb", 0, NULL);
+		if (!fp)
+		{
+			// Couldn't open it
+			Warning(FILESYSTEM_WARNING, "Couldn't open .bsp %s for embedded pack file check\n", fullpath);
+			return;
+		}
+
+		// Get the .bsp file header
+		dheader_t header;
+		memset(&header, 0, sizeof(dheader_t));
+		m_Stats.nBytesRead += FS_fread(&header, sizeof(header), fp);
+		m_Stats.nReads++;
+
+		if (header.ident != IDBSPHEADER || header.version < MINBSPVERSION || header.version > BSPVERSION)
+		{
+			Trace_FClose(fp);
+			return;
+		}
+
+		// lump_t fix for l4d2 maps
+		if (header.version == 21 && header.lumps[0].fileofs == 0)
+		{
+			DevMsg("Detected l4d2 bsp, fixing lump struct order for compatibility\n");
+
+			l4d2_lump_t l4d2lump;
+			V_memcpy(&l4d2lump, &header.lumps[LUMP_PAKFILE], sizeof(lump_t));
+
+			header.lumps[LUMP_PAKFILE].version = l4d2lump.version;
+			header.lumps[LUMP_PAKFILE].filelen = l4d2lump.filelen;
+			header.lumps[LUMP_PAKFILE].fileofs = l4d2lump.fileofs;
+		}
+
+		// Find the LUMP_PAKFILE offset
+		lump_t* packfile = &header.lumps[LUMP_PAKFILE];
+		if (packfile->filelen <= sizeof(lump_t))
+		{
+			// It's empty or only contains a file header ( so there are no entries ), so don't add to search paths
+			Trace_FClose(fp);
+			return;
+		}
+
+		// Seek to correct position
+		FS_fseek(fp, packfile->fileofs, FILESYSTEM_SEEK_HEAD);
+
+		CPackFile* pf = new CZipPackFile(this);
+
+		pf->m_bIsMapPath = true;
+		pf->m_hPackFileHandleFS = fp;
+
+		MEM_ALLOC_CREDIT();
+		pf->m_PackName = fullpath;
+
+		if (pf->Prepare(packfile->filelen, packfile->fileofs))
+		{
+			int nIndex;
+			if (addType == PATH_ADD_TO_TAIL)
+			{
+				nIndex = m_SearchPaths.AddToTail();
+			}
+			else
+			{
+				nIndex = m_SearchPaths.AddToHead();
+			}
+
+			CSearchPath* sp = &m_SearchPaths[nIndex];
+
+			sp->SetPackFile(pf);
+			sp->m_storeId = g_iNextSearchPathID++;
+			sp->SetPath(g_PathIDTable.AddString(newPath));
+			sp->m_pPathIDInfo = FindOrAddPathIDInfo(g_PathIDTable.AddString(pPathID), -1);
+
+			if (IsX360() && !V_strnicmp(newPath, "net:", 4))
+			{
+				sp->m_bIsRemotePath = true;
+			}
+
+			pf->SetPath(sp->GetPath());
+			pf->m_lPackFileTime = GetFileTime(newPath);
+
+			Trace_FClose(pf->m_hPackFileHandleFS);
+			pf->m_hPackFileHandleFS = NULL;
+
+			m_ZipFiles.AddToTail(pf);
+		}
+		else
+		{
+			delete pf;
+		}
 	}
 }
 
@@ -1191,7 +1305,7 @@ void CBaseFileSystem::AddVPKFile( const char *pPath, const char *pPathID, Search
 	}
 
 	pf = new CVPKFile( this, bVolumes, vpkheader, basepath );
-	pf->m_hPackFileHandle = dirvpk;
+	pf->m_hPackFileHandleFS = dirvpk;
 	pf->m_PackName = pathlower;
 
 	FS_fseek( dirvpk, 0, FILESYSTEM_SEEK_TAIL );
@@ -1201,8 +1315,8 @@ void CBaseFileSystem::AddVPKFile( const char *pPath, const char *pPathID, Search
 	if ( !pf->Prepare( len ) )
 	{
 		// Failed for some reason, ignore it
-		Trace_FClose( pf->m_hPackFileHandle );
-		pf->m_hPackFileHandle = NULL;
+		Trace_FClose( pf->m_hPackFileHandleFS);
+		pf->m_hPackFileHandleFS = NULL;
 		delete pf;
 
 		return;
@@ -1225,6 +1339,81 @@ void CBaseFileSystem::AddVPKFile( const char *pPath, const char *pPathID, Search
 	sp->m_pPathIDInfo = FindOrAddPathIDInfo( g_PathIDTable.AddString( pPathID ), -1 );
 }
 
+//-----------------------------------------------------------------------------
+// Purpose: 
+//-----------------------------------------------------------------------------
+void CBaseFileSystem::AddGMAFile(const char* pPath, const char* pPathID, SearchPathAdd_t addType)
+{
+	CPackFile* pf = NULL;
+
+	char path[MAX_FILEPATH];
+	strcpy(path, pPath);
+	char pathlower[MAX_FILEPATH];
+	strcpy(pathlower, pPath);
+	V_strlower(pathlower);
+	char basepath[MAX_FILEPATH];
+	strcpy(basepath, pPath);
+	V_StripExtension(basepath, basepath, MAX_FILEPATH);
+
+	//Try to open the vpk
+	FILE* dirvpk = Trace_FOpen(path, "rb", 0, NULL);
+
+	GMAAddon::Header GMAHeader;
+
+	if (!FS_fread(&GMAHeader, sizeof(GMAHeader), dirvpk))
+		return;
+
+	if (V_strncmp(GMAHeader.Ident, GMAAddon::Ident, 4) != 0)
+	{
+#if VPK_DEBUG
+		::Warning("Invalid GMA signature for %s\n", path);
+#endif
+		return;
+	}
+
+	if (GMAHeader.Version > GMAAddon::Version)
+	{
+#if VPK_DEBUG
+		::Warning("Invalid GMA version for %s\n", path);
+#endif
+		return;
+	}
+
+	pf = new CGMAFile(this, GMAHeader.Version, basepath);
+	pf->m_hPackFileHandleFS = dirvpk;
+	pf->m_PackName = pathlower;
+
+	FS_fseek(dirvpk, 0, FILESYSTEM_SEEK_TAIL);
+	int64 len = FS_ftell(dirvpk);
+	FS_fseek(dirvpk, 0, FILESYSTEM_SEEK_HEAD);
+
+	if (!pf->Prepare(len))
+	{
+		// Failed for some reason, ignore it
+		Trace_FClose(pf->m_hPackFileHandleFS);
+		pf->m_hPackFileHandleFS = NULL;
+		delete pf;
+
+		return;
+	}
+
+	int nIndex;
+	if (addType == PATH_ADD_TO_TAIL)
+		nIndex = m_SearchPaths.AddToTail();
+	else
+		nIndex = m_SearchPaths.AddToHead();
+
+	// Add this pack file to the search path:
+	CSearchPath* sp = &m_SearchPaths[nIndex];
+	pf->SetPath(pathlower);
+	pf->m_lPackFileTime = GetFileTime(path);
+
+	sp->SetPackFile(pf);
+	sp->m_storeId = g_iNextSearchPathID++;
+	sp->SetPath(g_PathIDTable.AddString(pathlower));
+	sp->m_pPathIDInfo = FindOrAddPathIDInfo(g_PathIDTable.AddString(pPathID), -1);
+}
+
 void CBaseFileSystem::BeginMapAccess() 
 {
 	if ( m_iMapLoad++ == 0 )
@@ -1239,9 +1428,9 @@ void CBaseFileSystem::BeginMapAccess()
 			{
 				pPackFile->AddRef();
 				pPackFile->m_mutex.Lock();
-				if ( pPackFile->m_nOpenFiles == 0 && pPackFile->m_hPackFileHandle == NULL )
+				if ( pPackFile->m_nOpenFiles == 0 && pPackFile->m_hPackFileHandleFS == NULL && !pPackFile->m_hPackFileHandlePK)
 				{
-					pPackFile->m_hPackFileHandle = Trace_FOpen( pPackFile->m_PackName, "rb", 0, NULL );
+					pPackFile->m_hPackFileHandleFS = Trace_FOpen( pPackFile->m_PackName, "rb", 0, NULL );
 				}
 				pPackFile->m_nOpenFiles++;
 				pPackFile->m_mutex.Unlock();
@@ -1267,8 +1456,11 @@ void CBaseFileSystem::EndMapAccess()
 				pPackFile->m_nOpenFiles--;
 				if ( pPackFile->m_nOpenFiles == 0  )
 				{
-					Trace_FClose( pPackFile->m_hPackFileHandle );
-					pPackFile->m_hPackFileHandle = NULL;
+					if (pPackFile->m_hPackFileHandleFS)
+					{
+						Trace_FClose(pPackFile->m_hPackFileHandleFS);
+						pPackFile->m_hPackFileHandleFS = NULL;
+					}
 				}
 				pPackFile->m_mutex.Unlock();
 				pPackFile->Release();
@@ -1290,6 +1482,7 @@ void CBaseFileSystem::PrintSearchPaths( void )
 
 		const char *pszPack = "";
 		const char *pszType = "";
+#if 0
 		if ( pSearchPath->GetPackFile() && pSearchPath->GetPackFile()->m_bIsMapPath )
 		{
 			pszType = "(map)";
@@ -1304,6 +1497,31 @@ void CBaseFileSystem::PrintSearchPaths( void )
 			pszType = "(pack)";
 			pszPack = pSearchPath->GetPackFile()->m_PackName;
 		}
+#else
+		if (pSearchPath->GetPackFile())
+		{
+			if (pSearchPath->GetPackFile()->m_bIsMapPath)
+				pszType = "(map)";
+			else
+			{
+				pszPack = pSearchPath->GetPackFile()->GetDebugName();
+
+				switch (pSearchPath->GetPackFile()->GetPackClass())
+				{
+				case PACK_ZIP:
+				default:
+					pszType = "(pack)";
+					break;
+				case PACK_VPK:
+					pszType = "(VPK)";
+					break;
+				case PACK_GMA:
+					pszType = "(GMA) ";
+					break;
+				}
+			}
+		}
+#endif
 
 		Msg( "\"%s\" \"%s\" %s%s\n", pSearchPath->GetPathString(), (const char *)pSearchPath->GetPathIDString(), pszType, pszPack );
 	}
@@ -1345,6 +1563,11 @@ void CBaseFileSystem::AddSearchPathInternal( const char *pPath, const char *path
 	else if ( V_GetFileExtension( pPath ) && ( V_strcmp( "vpk", V_GetFileExtension( pPath ) ) == 0 ) )
 	{
 		AddVPKFile( pPath, pathID, addType );
+		return;
+	}
+	else if (V_GetFileExtension(pPath) && (V_strcmp("gma", V_GetFileExtension(pPath)) == 0))
+	{
+		AddGMAFile(pPath, pathID, addType);
 		return;
 	}
 
@@ -4575,7 +4798,7 @@ CBaseFileSystem::CSearchPath *CBaseFileSystem::CSearchPathsIterator::GetNext()
 	{
 		pSearchPath = &m_SearchPaths[m_iCurrent];
 
-		if ( m_PathTypeFilter == FILTER_CULLPACK && pSearchPath->GetPackFile() && !pSearchPath->GetPackFile()->m_bIsVPK )
+		if ( m_PathTypeFilter == FILTER_CULLPACK && pSearchPath->GetPackFile() /*&& !pSearchPath->GetPackFile()->m_bIsVPK*/ )
 			continue;
 
 		if ( m_PathTypeFilter == FILTER_CULLNONPACK && !pSearchPath->GetPackFile() )

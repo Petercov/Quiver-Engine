@@ -469,7 +469,7 @@ static void FileSystem_AddLoadedSearchPath(
 
 
 	// Special processing for ordinary game folders
-	if ( V_stristr( fullLocationPath, ".vpk" ) == NULL && Q_stricmp( pPathID, "game" ) == 0 )
+	if ( V_stristr( fullLocationPath, ".vpk" ) == NULL && V_stristr(fullLocationPath, ".gma") == NULL && Q_stricmp( pPathID, "game" ) == 0 )
 	{
 		if ( CommandLine()->FindParm( "-tempcontent" ) != 0 )
 		{
@@ -613,7 +613,7 @@ FSReturnCode_t FileSystem_LoadSearchPaths( CFSSearchPathsInit &initInfo )
 				{
 
 					// We only know how to mount VPK's and directories
-					if ( pszFoundShortName[0] != '.' && ( initInfo.m_pFileSystem->FindIsDirectory( findHandle ) || V_stristr( pszFoundShortName, ".vpk" ) ) )
+					if ( pszFoundShortName[0] != '.' && ( initInfo.m_pFileSystem->FindIsDirectory( findHandle ) || V_stristr( pszFoundShortName, ".vpk" ) || V_stristr(pszFoundShortName, ".gma")) )
 					{
 						char szAbsName[MAX_PATH];
 						V_ExtractFilePath( szAbsSearchPath, szAbsName, sizeof( szAbsName ) );

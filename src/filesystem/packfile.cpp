@@ -25,9 +25,23 @@ int CPackFile::ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nByte
 		Msg( "Read From Pack: Sync I/O: Requested:%7d, Offset:0x%16.16x, %s\n", nBytes, m_nBaseOffset + nOffset, szName );
 	}
 
+	int nBytesRead = 0;
 	// Seek to the start of the read area and perform the read: TODO: CHANGE THIS INTO A CFileHandle
-	m_fs->FS_fseek( m_hPackFileHandle, m_nBaseOffset + nOffset, SEEK_SET );
-	int nBytesRead = m_fs->FS_fread( buffer, nDestBytes, nBytes, m_hPackFileHandle );
+	if (m_hPackFileHandleFS)
+	{
+		m_fs->FS_fseek(m_hPackFileHandleFS, m_nBaseOffset + nOffset, SEEK_SET);
+		nBytesRead = m_fs->FS_fread(buffer, nDestBytes, nBytes, m_hPackFileHandleFS);
+	}
+	else if (m_hPackFileHandlePK)
+	{
+		// We're a packfile embedded in a VPK
+		m_hPackFileHandlePK->Seek(m_nBaseOffset + nOffset, FILESYSTEM_SEEK_HEAD);
+		nBytesRead = m_hPackFileHandlePK->Read(buffer, nDestBytes, nBytes);
+	}
+	else
+	{
+		Error("Failure in CPackFile::ReadFromPack(): m_hPackFileHandleFS and/or m_hPackFileHandleVPK are uninitialized - The file open call(s) likely failed\n");
+	}
 
 	m_mutex.Unlock();
 
@@ -46,9 +60,9 @@ CFileHandle *CPackFile::OpenFile( const char *pFileName, const char *pOptions )
 	if ( FindFile( pFileName, nIndex, nPosition, nLength ) )
 	{
 		m_mutex.Lock();
-		if ( m_nOpenFiles == 0 && m_hPackFileHandle == NULL )
+		if ( m_nOpenFiles == 0 && m_hPackFileHandleFS == NULL && !m_hPackFileHandlePK)
 		{
-			m_hPackFileHandle = m_fs->Trace_FOpen( m_PackName, "rb", 0, NULL );
+			m_hPackFileHandleFS = m_fs->Trace_FOpen( m_PackName, "rb", 0, NULL );
 		}
 		m_nOpenFiles++;
 		m_mutex.Unlock();
@@ -507,7 +521,6 @@ CVPKFile::CVPKFile( CBaseFileSystem* fs, bool bVolumes, VPKHeader_t vpkheader, c
 {
 	V_strncpy( m_szBasePath, pszBasePath, sizeof( m_szBasePath ) );
 	m_fs = fs;
-	m_bIsVPK = true;
 }
 
 //-----------------------------------------------------------------------------
@@ -516,7 +529,7 @@ CVPKFile::CVPKFile( CBaseFileSystem* fs, bool bVolumes, VPKHeader_t vpkheader, c
 CVPKFile::~CVPKFile()
 {
 	for ( auto archive : m_hArchiveHandles )
-		m_fs->Trace_FClose( archive );
+		m_fs->Trace_FClose( archive.handle );
 
 	m_pFileEntries.PurgeAndDeleteElements();
 }
@@ -535,12 +548,12 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 		return false;
 
 	// Read the directory tree and store entry file 
-	m_fs->FS_fseek( m_hPackFileHandle, nHeaderSize, FILESYSTEM_SEEK_HEAD );
+	m_fs->FS_fseek( m_hPackFileHandleFS, nHeaderSize, FILESYSTEM_SEEK_HEAD );
 
 	while ( true )
 	{
 		CUtlVector< char > extension;
-		ReadString( extension, m_hPackFileHandle );
+		ReadString( extension, m_hPackFileHandleFS);
 
 		if ( extension[ 0 ] == '\0' )
 			break;
@@ -548,7 +561,7 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 		while ( true )
 		{
 			CUtlVector< char > base_path;
-			ReadString( base_path, m_hPackFileHandle );
+			ReadString( base_path, m_hPackFileHandleFS);
 
 			if ( base_path[ 0 ] == '\0' )
 				break;
@@ -560,7 +573,7 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 			while ( true )
 			{
 				CUtlVector< char > file_name;
-				ReadString( file_name, m_hPackFileHandle );
+				ReadString( file_name, m_hPackFileHandleFS);
 
 				if ( file_name[ 0 ] == '\0' )
 					break;
@@ -569,12 +582,12 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 				pFileEntry->index = m_pFileEntries.AddToTail( pFileEntry );
 
 				VPKDirectoryEntry_t &entry = pFileEntry->entry;
-				m_fs->FS_fread( &entry.CRC, sizeof( entry.CRC ), m_hPackFileHandle );
-				m_fs->FS_fread( &entry.PreloadBytes, sizeof( entry.PreloadBytes ), m_hPackFileHandle );
-				m_fs->FS_fread( &entry.ArchiveIndex, sizeof( entry.ArchiveIndex ), m_hPackFileHandle );
-				m_fs->FS_fread( &entry.EntryOffset, sizeof( entry.EntryOffset ), m_hPackFileHandle );
-				m_fs->FS_fread( &entry.EntryLength, sizeof( entry.EntryLength ), m_hPackFileHandle );
-				m_fs->FS_fread( &entry.Terminator, sizeof( entry.Terminator ), m_hPackFileHandle );
+				m_fs->FS_fread( &entry.CRC, sizeof( entry.CRC ), m_hPackFileHandleFS);
+				m_fs->FS_fread( &entry.PreloadBytes, sizeof( entry.PreloadBytes ), m_hPackFileHandleFS);
+				m_fs->FS_fread( &entry.ArchiveIndex, sizeof( entry.ArchiveIndex ), m_hPackFileHandleFS);
+				m_fs->FS_fread( &entry.EntryOffset, sizeof( entry.EntryOffset ), m_hPackFileHandleFS);
+				m_fs->FS_fread( &entry.EntryLength, sizeof( entry.EntryLength ), m_hPackFileHandleFS);
+				m_fs->FS_fread( &entry.Terminator, sizeof( entry.Terminator ), m_hPackFileHandleFS);
 
 				if ( bPathEmpty )
 					V_snprintf( pFileEntry->szFullFilePath, sizeof( pFileEntry->szFullFilePath ), "%s.%s", file_name.Base(), extension.Base() );
@@ -587,7 +600,7 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 				if ( entry.PreloadBytes )
 				{
 					pFileEntry->PreloadData.EnsureCapacity(entry.PreloadBytes);
-					m_fs->FS_fread( pFileEntry->PreloadData.Base(), entry.PreloadBytes, m_hPackFileHandle );
+					m_fs->FS_fread( pFileEntry->PreloadData.Base(), entry.PreloadBytes, m_hPackFileHandleFS);
 				}
 				
 				// File only available for lookups if it has no preload data
@@ -607,10 +620,12 @@ bool CVPKFile::Prepare( int64 fileLen, int64 nFileOfs )
 			V_snprintf( volPath, sizeof( volPath ), "%s_%03d.vpk", m_szBasePath, volNum );
 			++volNum;
 
-			FILE *archive = m_fs->Trace_FOpen( volPath, "rb", 0, NULL );
-			if ( !archive )
+			FILE *hArchive = m_fs->Trace_FOpen( volPath, "rb", 0, NULL );
+			if ( !hArchive)
 				break;
 
+			ArchiveHandle_t archive;
+			archive.handle = hArchive;
 			m_hArchiveHandles.AddToTail( archive );
 		}
 	}
@@ -795,23 +810,25 @@ int CVPKFile::ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nBytes
 
 		nOffset -= PreloadBytes;
 
-		FILE* vpk = (m_bVolumes) ? m_hArchiveHandles[m_pFileEntries[nIndex]->entry.ArchiveIndex] : m_hPackFileHandle;
+		FILE* vpk = (m_bVolumes) ? m_hArchiveHandles[m_pFileEntries[nIndex]->entry.ArchiveIndex].handle : m_hPackFileHandleFS;
+		CThreadFastMutex& Mutex = (m_bVolumes) ? m_hArchiveHandles[m_pFileEntries[nIndex]->entry.ArchiveIndex].mutex : m_mutex;
 
-		m_mutex.Lock(); // We should only need to lock when doing filesystem operations
+		Mutex.Lock(); // We should only need to lock when doing filesystem operations
 		m_fs->FS_fseek( vpk, m_nBaseOffset + nOffset, SEEK_SET );
 		nBytesRead += m_fs->FS_fread( (byte*)buffer + nBytesRead, nDestBytes - nBytesRead, nBytes - nBytesRead, vpk );
-		m_mutex.Unlock();
+		Mutex.Unlock();
 
 		return nBytesRead;
 	}
 
 	// Seek to the start of the read area and perform the read: TODO: CHANGE THIS INTO A CFileHandle
-	FILE *vpk = ( m_bVolumes ) ? m_hArchiveHandles[ m_pFileEntries[ nIndex ]->entry.ArchiveIndex ] : m_hPackFileHandle;
+	FILE* vpk = (m_bVolumes) ? m_hArchiveHandles[m_pFileEntries[nIndex]->entry.ArchiveIndex].handle : m_hPackFileHandleFS;
+	CThreadFastMutex& Mutex = (m_bVolumes) ? m_hArchiveHandles[m_pFileEntries[nIndex]->entry.ArchiveIndex].mutex : m_mutex;
 
-	m_mutex.Lock(); // We should only need to lock when doing filesystem operations
+	Mutex.Lock(); // We should only need to lock when doing filesystem operations
 	m_fs->FS_fseek( vpk, m_nBaseOffset + nOffset, SEEK_SET );
 	nBytesRead = m_fs->FS_fread( buffer, nDestBytes, nBytes, vpk );
-	m_mutex.Unlock();
+	Mutex.Unlock();
 
 	return nBytesRead;
 }
@@ -834,4 +851,233 @@ void CVPKFile::ReadString( CUtlVector< char > &buffer, FILE *pArchiveFile )
 		if ( c == '\0' )
 			break;
 	}
+}
+
+CGMAFile::CGMAFile(CBaseFileSystem* fs, char nGMAVersion, const char* pszBasePath)
+{
+	m_fs = fs;
+	m_nFMTVersion = nGMAVersion;
+
+	m_ullTimeStamp = 0uLL;
+	m_nAddonVersion = 0;
+	m_fileblock = 0;
+}
+
+bool CGMAFile::Prepare(int64 fileLen, int64 nFileOfs)
+{
+	m_fs->FS_fseek(m_hPackFileHandleFS, GMAAddon::TimestampOffset, FILESYSTEM_SEEK_HEAD);
+	m_fs->FS_fread(&m_ullTimeStamp, sizeof(uint64_t), m_hPackFileHandleFS);
+
+	if (m_nFMTVersion > 1)
+	{
+		std::string strContent = FS_ReadString();
+
+		while (!strContent.empty())
+		{
+			strContent = FS_ReadString();
+		}
+	}
+
+	m_strAddonName = FS_ReadString();
+	m_jsonAddonDescription = nlohmann::json::parse(FS_ReadString(), nullptr, false, true);
+	m_strAddonAuthor = FS_ReadString();
+	m_fs->FS_fread(&m_nAddonVersion, sizeof(int32_t), m_hPackFileHandleFS);
+
+	//
+	// File index
+	//
+	int32_t iFileNumber = 1;
+	int64_t iOffset = 0;
+
+	while (FS_ReadType<uint32_t>() != 0)
+	{
+		GMAAddon::FileEntry entry;
+		entry.strName = FS_ReadString();
+		V_FixDoubleSlashes(entry.strName.data());
+		V_FixSlashes(entry.strName.data());
+		entry.iSize = FS_ReadType<int64_t>();
+		entry.iCRC = FS_ReadType<uint32_t>();
+		entry.iOffset = iOffset;
+		entry.iFileNumber = iFileNumber;
+		m_FileMap[entry.strName.c_str()] = m_index.AddToTail(entry);
+		iOffset += entry.iSize;
+		iFileNumber++;
+	}
+
+	m_fileblock = m_fs->FS_ftell(m_hPackFileHandleFS);
+
+	return true;
+}
+
+bool CGMAFile::FindFile(const char* pFilename, int& nIndex, int64& nOffset, int& nLength)
+{
+	char fixedfilename[MAX_FILEPATH];
+	V_strncpy(fixedfilename, pFilename, sizeof(fixedfilename));
+
+	V_FixDoubleSlashes(fixedfilename);
+	V_FixSlashes(fixedfilename);
+
+	UtlSymId_t id = m_FileMap.Find(fixedfilename);
+	const int iFileIndex = (id == m_FileMap.InvalidIndex()) ? m_index.InvalidIndex() : m_FileMap[id];
+
+	if (!m_index.IsValidIndex(iFileIndex))
+		return false;
+
+	nIndex = iFileIndex;
+	const auto& hFileEntry = m_index[iFileIndex];
+
+	nOffset = m_fileblock + hFileEntry.iOffset;
+	nLength = hFileEntry.iSize;
+	return true;
+}
+
+bool CGMAFile::FindFirst(CBaseFileSystem::FindData_t* pFindData)
+{
+	char extension[FILENAME_MAX];
+	V_ExtractFileExtension(pFindData->wildCardString.Base(), extension, sizeof(extension));
+
+#ifdef _WIN32
+	V_strlower(extension);
+#endif
+
+	if (extension[0] == '\0' || (extension[0] == '*' && extension[1] == '\0'))
+	{
+		// We're looking for directories
+		char path[MAX_FILEPATH];
+		strncpy(path, pFindData->wildCardString.Base(), sizeof(path));
+		V_FixSlashes(path);
+
+		strtok(path, "*");
+		V_StripTrailingSlash(path);
+#if _WIN32
+		V_strlower(path);
+#endif
+#if 0
+		const int numPathMapStrings = m_PathMap.GetNumStrings();
+		for (int i = 0; i < numPathMapStrings; ++i)
+		{
+			const char* current_path = m_PathMap.String(i);
+			if (V_stricmp(path, current_path) == 0)
+				continue;
+
+			char parent_path[MAX_FILEPATH];
+			strncpy(parent_path, current_path, sizeof(parent_path));
+
+			if (V_StripLastDir(parent_path, sizeof(parent_path)))
+			{
+				V_StripTrailingSlash(parent_path);
+
+				if (V_stricmp(parent_path, path) == 0)
+					pFindData->pfFindData.directoryList.CopyAndAddToTail(V_UnqualifiedFileName(current_path));
+			}
+		}
+#endif
+		const int numFileMapStrings = m_FileMap.GetNumStrings();
+		for (int i = 0; i < numFileMapStrings; ++i)
+		{
+			const char* current_file = m_FileMap.String(i);
+			char filepath[MAX_FILEPATH];
+			strncpy(filepath, current_file, sizeof(filepath));
+			V_StripFilename(filepath);
+
+			if (V_stricmp(filepath, path) == 0)
+				pFindData->pfFindData.fileList.CopyAndAddToTail(V_UnqualifiedFileName(current_file));
+		}
+
+		return FindNext(pFindData);
+	}
+	else
+	{
+		// We're looking for files
+		char filepath[MAX_FILEPATH];
+		V_strncpy(filepath, pFindData->wildCardString.Base(), sizeof(filepath));
+		V_FixSlashes(filepath);
+
+		if (strtok(filepath, "*") != nullptr)
+		{
+			V_StripTrailingSlash(filepath);
+#if _WIN32
+			V_strlower(filepath);
+#endif
+#if 0
+			UtlSymId_t pathid = m_PathMap.Find(filepath);
+
+			if (pathid != m_PathMap.InvalidIndex())
+			{
+				CUtlVector< const VPKFileEntry_t* >& fileEntryList = m_PathMap[pathid];
+
+				for (auto entry : fileEntryList)
+				{
+					if (V_stricmp(entry->pszFileExtension, extension) == 0)
+						pFindData->pfFindData.fileList.CopyAndAddToTail(V_UnqualifiedFileName(entry->szFullFilePath));
+				}
+
+				return FindNext(pFindData);
+			}
+#else
+			const int numFileMapStrings = m_FileMap.GetNumStrings();
+			for (int i = 0; i < numFileMapStrings; ++i)
+			{
+				const char* pszFullFilePath = m_FileMap.String(i);
+				char path[MAX_FILEPATH];
+				strncpy(path, pszFullFilePath, sizeof(path));
+				V_StripFilename(path);
+
+				if (V_stricmp(filepath, path) == 0 && V_stristr(pszFullFilePath, extension) != 0)
+					pFindData->pfFindData.fileList.CopyAndAddToTail(V_UnqualifiedFileName(pszFullFilePath));
+			}
+
+			return FindNext(pFindData);
+#endif
+		}
+	}
+
+	return false;
+}
+
+bool CGMAFile::FindNext(CBaseFileSystem::FindData_t* pFindData)
+{
+	if (pFindData->pfFindData.currentDirectory != pFindData->pfFindData.directoryList.Count())
+	{
+		const char* pszDirectoryName = pFindData->pfFindData.directoryList[pFindData->pfFindData.currentDirectory];
+		pFindData->findData.dwFileAttributes |= FILE_ATTRIBUTE_DIRECTORY;
+
+		strncpy(pFindData->findData.cFileName, pszDirectoryName, sizeof(pFindData->findData.cFileName));
+		++pFindData->pfFindData.currentDirectory;
+
+		return true;
+	}
+
+	if (pFindData->pfFindData.currentFile != pFindData->pfFindData.fileList.Count())
+	{
+		const char* pszFileName = pFindData->pfFindData.fileList[pFindData->pfFindData.currentFile];
+		pFindData->findData.dwFileAttributes &= ~FILE_ATTRIBUTE_DIRECTORY;
+
+		strncpy(pFindData->findData.cFileName, pszFileName, sizeof(pFindData->findData.cFileName));
+		++pFindData->pfFindData.currentFile;
+
+		return true;
+	}
+
+	return false;
+}
+
+bool CGMAFile::IndexToFilename(int nIndex, char* pBuffer, int nBufferSize)
+{
+	const auto& entry = m_index[nIndex];
+	V_strncpy(pBuffer, entry.strName.c_str(), nBufferSize);
+
+	return true;
+}
+
+std::string CGMAFile::FS_ReadString()
+{
+	std::string ret;
+	char c = 0;
+	while (m_fs->FS_fread(&c, sizeof(char), m_hPackFileHandleFS) && c != 0)
+	{
+		ret.append(1, c);
+	}
+
+	return ret;
 }

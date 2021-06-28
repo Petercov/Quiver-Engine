@@ -6,6 +6,11 @@
 #include "basefilesystem.h"
 #include "tier1/refcount.h"
 
+#include "valve_minmax_off.h"
+#include <gmafile/AddonFormat.h>
+#include <nlohmann/json.hpp>
+#include "valve_minmax_on.h"
+
 struct PackFileFindData_t;
 
 // A pack file handle - essentially represents a file inside the pack file.  
@@ -33,6 +38,13 @@ protected:
 	unsigned int	m_nIndex;			// Index into the pack's directory table
 };
 
+enum PackFileClass_e
+{
+	PACK_ZIP = 0,
+	PACK_VPK,
+	PACK_GMA
+};
+
 //-----------------------------------------------------------------------------
 
 class CPackFile : public CRefCounted<CRefCountServiceMT>
@@ -48,6 +60,7 @@ public:
 	// The two functions a pack file must provide
 	virtual bool Prepare( int64 fileLen = -1, int64 nFileOfs = 0 ) = 0;
 	virtual bool FindFile( const char *pFilename,  int &nIndex, int64 &nPosition, int &nLength ) = 0;
+	virtual int GetPackClass() = 0;
 
 	// Used by FindFirst and FindNext
 	virtual bool FindFirst( CBaseFileSystem::FindData_t *pFindData ) { return false; }
@@ -64,6 +77,8 @@ public:
 	virtual void SetupPreloadData() {}
 	virtual void DiscardPreloadData() {}
 	virtual int64 GetPackFileBaseOffset() = 0;
+
+	virtual const char* GetDebugName() { return m_PackName.String(); }
 
 	// Note: threading model for pack files assumes that data
 	// is segmented into pack files that aggregate files
@@ -82,13 +97,13 @@ public:
 	CUtlString			m_PackName;
 
 	bool				m_bIsMapPath;
-	bool				m_bIsVPK;
 	long				m_lPackFileTime;
 
 	int					m_refCount;
 	int					m_nOpenFiles;
 
-	FILE				*m_hPackFileHandle;	
+	FILE* m_hPackFileHandleFS;
+	CPackFileHandle* m_hPackFileHandlePK;
 
 protected:
 	int64				m_FileLength;
@@ -107,6 +122,7 @@ public:
 	virtual bool Prepare( int64 fileLen = -1, int64 nFileOfs = 0 );
 	virtual bool FindFile( const char *pFilename, int &nIndex, int64 &nOffset, int &nLength );
 	virtual int  ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nBytes, int64 nOffset  );
+	virtual int GetPackClass() { return PACK_ZIP; }
 
 	int64 GetPackFileBaseOffset() { return m_nBaseOffset; }
 
@@ -262,6 +278,7 @@ public:
 	virtual bool FindFirst( CBaseFileSystem::FindData_t *pFindData ) override;
 	virtual bool FindNext( CBaseFileSystem::FindData_t *pFindData ) override;
 	virtual int  ReadFromPack( int nIndex, void* buffer, int nDestBytes, int nBytes, int64 nOffset  ) override;
+	virtual int GetPackClass() { return PACK_VPK; }
 
 	int64 GetPackFileBaseOffset() override { return m_nBaseOffset; }
 
@@ -278,12 +295,54 @@ private:
 	char m_szBasePath[ MAX_PATH ]; // VPK file path without _dir suffix, and without .vpk extension
 	const VPKHeader_t m_vpkHeader;
 	CUtlVector< VPKFileEntry_t* > m_pFileEntries;
-	CUtlVector< FILE* > m_hArchiveHandles;
+	typedef struct ArchiveHandle_s
+	{
+		FILE* handle;
+		CThreadFastMutex mutex;
+	} ArchiveHandle_t;
+	CUtlVector< ArchiveHandle_t > m_hArchiveHandles;
 
 protected:
 
 	CUtlStringMap< CUtlVector< const VPKFileEntry_t* > > m_PathMap; // Maps base path to list of file entries
 	CUtlStringMap< const VPKFileEntry_t* > m_FileMap; // Maps fully formed file path to a particular file entry
+};
+
+class CGMAFile : public CPackFile
+{
+public:
+	CGMAFile(CBaseFileSystem* fs, char nGMAVersion, const char* pszBasePath);
+
+	virtual bool Prepare(int64 fileLen = -1, int64 nFileOfs = 0);
+	virtual bool FindFile(const char* pFilename, int& nIndex, int64& nOffset, int& nLength);
+	virtual bool FindFirst(CBaseFileSystem::FindData_t* pFindData) override;
+	virtual bool FindNext(CBaseFileSystem::FindData_t* pFindData) override;
+	virtual int GetPackClass() { return PACK_GMA; }
+
+	int64 GetPackFileBaseOffset() override { return m_nBaseOffset; }
+
+	bool IndexToFilename(int nIndex, char* pBuffer, int nBufferSize) override;
+
+	virtual const char* GetDebugName() { return m_strAddonName.c_str(); }
+
+protected:
+	std::string FS_ReadString();
+
+	template <typename T>
+	T FS_ReadType();
+
+	char m_nFMTVersion;
+	int32_t m_nAddonVersion;
+	//uint64_t m_ullSteamID;
+	uint64_t m_ullTimeStamp;
+	std::string m_strAddonName;
+	std::string m_strAddonAuthor;
+	nlohmann::json m_jsonAddonDescription;
+
+	CUtlVector< GMAAddon::FileEntry >	m_index;
+	uint32_t			m_fileblock;
+
+	CUtlStringMap< int > m_FileMap; // Maps fully formed file path to a particular file entry
 };
 
 // Pack file handle implementation:
@@ -304,8 +363,11 @@ inline CPackFileHandle::~CPackFileHandle()
 	--m_pOwner->m_nOpenFiles;
 	if ( m_pOwner->m_nOpenFiles == 0 && m_pOwner->m_bIsMapPath )
 	{
-		m_pOwner->m_fs->Trace_FClose( m_pOwner->m_hPackFileHandle );
-		m_pOwner->m_hPackFileHandle = NULL;
+		if (m_pOwner->m_hPackFileHandleFS)
+		{
+			m_pOwner->m_fs->Trace_FClose(m_pOwner->m_hPackFileHandleFS);
+			m_pOwner->m_hPackFileHandleFS = NULL;
+		}
 	}
 	m_pOwner->Release();
 	m_pOwner->m_mutex.Unlock();
@@ -313,7 +375,10 @@ inline CPackFileHandle::~CPackFileHandle()
 
 inline void CPackFileHandle::SetBufferSize( int nBytes ) 
 {
-	m_pOwner->m_fs->FS_setbufsize( m_pOwner->m_hPackFileHandle, nBytes );
+	if (m_pOwner->m_hPackFileHandleFS)
+	{
+		m_pOwner->m_fs->FS_setbufsize(m_pOwner->m_hPackFileHandleFS, nBytes);
+	}
 }
 
 inline int CPackFileHandle::GetSectorSize() 
@@ -330,7 +395,8 @@ inline int64 CPackFileHandle::AbsoluteBaseOffset()
 inline CPackFile::CPackFile()
 {
 	m_FileLength = 0;
-	m_hPackFileHandle = NULL;
+	m_hPackFileHandleFS = NULL;
+	m_hPackFileHandlePK = NULL;
 	m_fs = NULL;
 	m_nBaseOffset = 0;
 	m_bIsMapPath = false;
@@ -346,10 +412,16 @@ inline CPackFile::~CPackFile()
 		Error( "Closing pack file with open files!\n" );
 	}
 
-	if ( m_hPackFileHandle )
+	if (m_hPackFileHandleFS)
 	{
-		m_fs->Trace_FClose( m_hPackFileHandle );
-		m_hPackFileHandle = NULL;
+		m_fs->FS_fclose(m_hPackFileHandleFS);
+		m_hPackFileHandleFS = NULL;
+	}
+
+	if (m_hPackFileHandlePK)
+	{
+		delete m_hPackFileHandlePK;
+		m_hPackFileHandlePK = NULL;
 	}
 
 	m_fs->m_ZipFiles.FindAndRemove( this );
@@ -358,9 +430,14 @@ inline CPackFile::~CPackFile()
 
 inline int CPackFile::GetSectorSize()
 {
-	if ( m_hPackFileHandle )
+	if (m_hPackFileHandleFS)
 	{
-		return m_fs->FS_GetSectorSize( m_hPackFileHandle );
+		return m_fs->FS_GetSectorSize(m_hPackFileHandleFS);
+	}
+	else if (m_hPackFileHandlePK)
+	{
+		//return 2048;
+		return m_hPackFileHandlePK->GetSectorSize();
 	}
 	else
 	{
@@ -369,3 +446,12 @@ inline int CPackFile::GetSectorSize()
 }
 
 #endif // PACKFILE_H
+
+template<typename T>
+inline T CGMAFile::FS_ReadType()
+{
+	T ret;
+	m_fs->FS_fread(&ret, sizeof(T), m_hPackFileHandleFS);
+
+	return ret;
+}
