@@ -862,6 +862,9 @@ public:
 
 	virtual void SetupColorMeshes( int nTotalVerts );
 
+	virtual void	SetModelInstanceCallback(IVModelInstanceClientCallback* pCallback);
+	virtual void*	GetInstanceClientData(ModelInstanceHandle_t handle);
+
 private:
 	enum
 	{
@@ -899,6 +902,9 @@ private:
 
 		// Color mesh managed by cache
 		DataCacheHandle_t m_ColorMeshHandle;
+
+		// Data managed by client
+		void* m_pClientData;
 	};
 
 	// Sets up the render state for a model
@@ -960,6 +966,8 @@ private:
 
 	// Allocator for static prop color mesh vertex buffers (all are pooled into one VB)
 	CPooledVBAllocator_ColorMesh	m_colorMeshVBAllocator;
+
+	IVModelInstanceClientCallback* m_pClientCallback;
 };
 
 
@@ -1068,6 +1076,8 @@ bool CModelRender::Init()
 	{
 		g_pQueuedLoader->InstallLoader( RESOURCEPRELOAD_STATICPROPLIGHTING, &s_ResourcePreloadPropLighting );
 	}
+
+	m_pClientCallback = nullptr;
 	return true;
 }
 
@@ -4099,6 +4109,7 @@ ModelInstanceHandle_t CModelRender::CreateInstance( IClientRenderable *pRenderab
 	instance.m_flLightingTime = CURRENT_LIGHTING_UNINITIALIZED;
 	instance.m_nFlags = 0;
 	instance.m_LightCacheHandle = 0;
+	instance.m_pClientData = (m_pClientCallback) ? m_pClientCallback->CreateInstanceData(handle, pRenderable) : nullptr;
 
 	instance.m_AmbientLightingState.ZeroLightingState();
 	for ( int i = 0; i < 6; ++i )
@@ -4352,10 +4363,29 @@ void CModelRender::SetupColorMeshes( int nTotalVerts )
 	}
 }
 
+void CModelRender::SetModelInstanceCallback(IVModelInstanceClientCallback* pCallback)
+{
+	m_pClientCallback = pCallback;
+}
+
+void* CModelRender::GetInstanceClientData(ModelInstanceHandle_t handle)
+{
+	if (handle == MODEL_INSTANCE_INVALID || !m_pClientCallback)
+		return nullptr;
+
+	ModelInstance_t& instance = m_ModelInstances[handle];
+	return instance.m_pClientData;
+}
+
 void CModelRender::DestroyInstance( ModelInstanceHandle_t handle )
 {
 	if ( handle == MODEL_INSTANCE_INVALID )
 		return;
+
+	if (m_pClientCallback)
+	{
+		m_pClientCallback->DestroyInstanceData(m_ModelInstances[handle].m_pClientData, handle);
+	}
 
 	g_pStudioRender->DestroyDecalList( m_ModelInstances[handle].m_DecalHandle );
 #ifndef SWDS
@@ -4388,6 +4418,15 @@ bool CModelRender::ChangeInstance( ModelInstanceHandle_t handle, IClientRenderab
 	{
 		DevMsg("MoveInstanceHandle: models are different!\n");
 		return false;
+	}
+
+	if (m_pClientCallback)
+	{
+		if (!m_pClientCallback->OnChangeInstance(instance.m_pClientData, handle, pRenderable))
+		{
+			DevMsg("MoveInstanceHandle: client said no!\n");
+			return false;
+		}
 	}
 
 	// ok, models are the same, change renderable pointer

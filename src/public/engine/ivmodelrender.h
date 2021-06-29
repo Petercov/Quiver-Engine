@@ -52,7 +52,7 @@ struct DrawModelState_t
 //-----------------------------------------------------------------------------
 
 // change this when the new version is incompatable with the old
-#define VENGINE_HUDMODEL_INTERFACE_VERSION	"VEngineModel016"
+#define VENGINE_HUDMODEL_INTERFACE_VERSION	"VEngineModel017"
 
 typedef unsigned short ModelInstanceHandle_t;
 
@@ -95,8 +95,17 @@ struct StaticPropRenderInfo_t
 	ModelInstanceHandle_t	instance;
 };
 
+class IVModelInstanceClientCallback
+{
+public:
+	virtual void*	CreateInstanceData(ModelInstanceHandle_t handle, IClientRenderable* pRenderable) = 0;
+	virtual void	DestroyInstanceData(void* pData, ModelInstanceHandle_t handle) = 0;
+
+	virtual bool	OnChangeInstance(void* pData, ModelInstanceHandle_t handle, IClientRenderable* pRenderable) = 0;
+};
+
 // UNDONE: Move this to hud export code, subsume previous functions
-abstract_class IVModelRender
+class IVModelRender
 {
 public:
 	virtual int		DrawModel(	int flags,
@@ -174,6 +183,9 @@ public:
 	virtual void SuppressEngineLighting( bool bSuppress ) = 0;
 
 	virtual void SetupColorMeshes( int nTotalVerts ) = 0;
+
+	virtual void	SetModelInstanceCallback(IVModelInstanceClientCallback* pCallback) = 0;
+	virtual void*	GetInstanceClientData(ModelInstanceHandle_t handle) = 0;
 };
 
 
