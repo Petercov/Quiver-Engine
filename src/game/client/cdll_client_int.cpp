@@ -90,6 +90,7 @@
 #include "engine/imatchmaking.h"
 #include "cdll_bounded_cvars.h"
 #include "statgather.h"
+#include "model_instance_data_handler.h"
 
 #ifdef PORTAL
 #include "PortalRender.h"
@@ -745,6 +746,7 @@ int CHLClient::Init( CreateInterfaceFn appSystemFactory, CreateInterfaceFn physi
 	// Client Leaf System has to be initialized first, since DetailObjectSystem uses it
 	IGameSystem::Add( GameStringSystem() );
 	IGameSystem::Add( SoundEmitterSystem() );
+	IGameSystem::Add( ModelInstanceDataManager() );
 	IGameSystem::Add( ToolFrameworkClientSystem() );
 	IGameSystem::Add( ClientLeafSystem() );
 	IGameSystem::Add( DetailObjectSystem() );
