@@ -240,13 +240,6 @@ private:
 	// Used by the lighting computation methods,
 	// this is only here to prevent constructors in lightpos_t from being repeatedly run
 	lightpos_t m_pLightPos[MAXLIGHTCOMPUTE];
-
-	// Allocates copies of bone-to-world matrices if necessary
-	CMemoryStack m_BoneToWorldMatrices[2];
-	
-	// Allocates flex weight data if necessary
-	CMemoryStack m_FlexWeights[2];
-	int m_nCurrentStack;
 };
 
 

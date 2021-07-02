@@ -423,6 +423,8 @@ bool CLocalizedStringTable::AddFile( const char *szFileName, const char *pPathID
 
 		BuildFastValueLookup();
 
+		CExpressionEvaluator ExpressionHandler;
+
 		states_e state = STATE_BASE;
 		while (1)
 		{
@@ -488,12 +490,12 @@ bool CLocalizedStringTable::AddFile( const char *szFileName, const char *pPathID
 						bool bAccepted = true;
 						wchar_t conditional[ MAX_LOCALIZED_CHARS ];
 						wchar_t *tempData = ReadUnicodeToken(data, conditional, MAX_LOCALIZED_CHARS, bQuoted);
-						if ( !bQuoted && wcsstr( conditional, L"[$" ) )
+						if ( !bQuoted && wcsstr( conditional, L"[$" ) || wcsstr(conditional, L"[!$"))
 						{
 							// Evaluate the conditional tag
 							char cond[MAX_LOCALIZED_CHARS];
 							ConvertUnicodeToANSI(conditional, cond, sizeof(cond));
-							bAccepted = EvaluateConditional( cond );
+							ExpressionHandler.Evaluate(bAccepted, cond);
 							data = tempData;
 						}
 						if ( bAccepted )

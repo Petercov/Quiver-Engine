@@ -30,6 +30,21 @@
 #define str_size size_t
 #endif
 
+#define USE_FAST_CASE_CONVERSION 1
+#if USE_FAST_CASE_CONVERSION
+/// Faster conversion of an ascii char to upper case. This function does not obey locale or any language
+/// setting. It should not be used to convert characters for printing, but it is a better choice
+/// for internal strings such as used for hash table keys, etc. It's meant to be inlined and used
+/// in places like the various dictionary classes. Not obeying locale also protects you from things
+/// like your hash values being different depending on the locale setting.
+#define FastASCIIToUpper( c ) ( ( ( (c) >= 'a' ) && ( (c) <= 'z' ) ) ? ( (c) - 32 ) : (c) )
+/// similar to FastASCIIToLower
+#define FastASCIIToLower( c ) ( ( ( (c) >= 'A' ) && ( (c) <= 'Z' ) ) ? ( (c) + 32 ) : (c) )
+#else
+#define FastASCIIToLower tolower
+#define FastASCIIToUpper toupper
+#endif
+
 template< class T, class I > class CUtlMemory;
 template< class T, class A > class CUtlVector;
 
@@ -142,6 +157,14 @@ inline int V_strcasecmp (const char *s1, const char *s2) { return V_stricmp(s1, 
 inline int V_strncasecmp (const char *s1, const char *s2, int n) { return V_strnicmp(s1, s2, n); }
 void		V_qsort_s( void *base, size_t num, size_t width, int ( __cdecl *compare )(void *, const void *,
 const void *), void *context );
+
+// A special high-performance case-insensitive compare function that in
+// a single call distinguishes between exactly matching strings,
+// strings equal in case-insensitive way, and not equal strings:
+//   returns 0 if strings match exactly
+//   returns >0 if strings match in a case-insensitive way, but do not match exactly
+//   returns <0 if strings do not match even in a case-insensitive way
+int	_V_stricmp_NegativeForUnequal(const char* s1, const char* s2);
 
 
 // returns string immediately following prefix, (ie str+strlen(prefix)) or NULL if prefix not found
