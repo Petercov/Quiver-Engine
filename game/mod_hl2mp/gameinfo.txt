@@ -28,6 +28,7 @@
             
 			game				hl2
             
+			game				sourcebase            
 			core				core
 		}
 	}

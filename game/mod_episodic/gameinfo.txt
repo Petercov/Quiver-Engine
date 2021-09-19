@@ -30,6 +30,7 @@
 			game				hl2/hl2_misc.vpk
 			game				hl2
             
+			game				sourcebase            
 			core				core
 		}
 	}

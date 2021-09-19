@@ -1,1 +1,1 @@
-#base "../core/resource/sourcescheme.res"
+#base "../../core/resource/sourcescheme.res"
