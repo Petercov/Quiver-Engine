@@ -42,6 +42,7 @@ files
 		"convar.cpp"
 		"datamanager.cpp"
 		"diff.cpp"
+		"exprevaluator.cpp"
 		"generichash.cpp"
 		"ilocalize.cpp"
 		"interface.cpp"

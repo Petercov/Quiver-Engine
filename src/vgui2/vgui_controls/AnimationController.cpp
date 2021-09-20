@@ -297,6 +297,8 @@ bool AnimationController::ParseScriptFile(char *pMem, int length)
 	int screenWide = m_nScreenBounds[ 2 ];
 	int screenTall = m_nScreenBounds[ 3 ];
 
+	CExpressionEvaluator ExpressionHandler;
+
 	// start by getting the first token
 	char token[512];
 	pMem = ParseFile(pMem, token, NULL);
@@ -330,9 +332,9 @@ bool AnimationController::ParseScriptFile(char *pMem, int length)
 
 		// get the open brace or a conditional
 		pMem = ParseFile(pMem, token, NULL);
-		if ( Q_stristr( token, "[$" ) )
+		if ( Q_stristr( token, "[$" ) || Q_stristr(token, "[!$"))
 		{
-			bAccepted = EvaluateConditional( token );
+			ExpressionHandler.Evaluate(bAccepted, token);
 
 			// now get the open brace
 			pMem = ParseFile(pMem, token, NULL);
