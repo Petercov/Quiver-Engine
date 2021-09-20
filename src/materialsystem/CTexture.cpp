@@ -58,6 +58,19 @@
 // NOTE: This must be the last file included!!!
 #include "tier0/memdbgon.h"
 
+#if defined(IS_WINDOWS_PC)
+static void ConVarChanged_mat_managedtextures(IConVar* var, const char* pOldValue, float flOldValue);
+static ConVar mat_managedtextures("mat_managedtextures", "0", FCVAR_ARCHIVE, "If set, allows Direct3D to manage texture uploading at the cost of extra system memory", &ConVarChanged_mat_managedtextures);
+static void ConVarChanged_mat_managedtextures(IConVar* var, const char* pOldValue, float flOldValue)
+{
+	if (mat_managedtextures.GetBool() != (flOldValue != 0))
+	{
+		materials->ReleaseResources();
+		materials->ReacquireResources();
+	}
+}
+#endif
+
 #if !defined( _X360 )
 #define TEXTURE_FNAME_EXTENSION			".vtf"
 #define TEXTURE_FNAME_EXTENSION_LEN		4
@@ -1361,7 +1374,18 @@ void CTexture::AllocateShaderAPITextures()
 	else
 	{
 		// If it's not a render target, use the texture manager in dx
-		nCreateFlags |= TEXTURE_CREATE_MANAGED;
+		//if (m_nFlags & TEXTUREFLAGS_STAGING_MEMORY)
+		//	nCreateFlags |= TEXTURE_CREATE_SYSMEM;
+		//else
+		{
+#if defined(IS_WINDOWS_PC)
+			static ConVarRef mat_dxlevel("mat_dxlevel");
+			if (mat_dxlevel.GetInt() < 90 || mat_managedtextures.GetBool())
+#endif
+			{
+				nCreateFlags |= TEXTURE_CREATE_MANAGED;
+			}
+		}
 	}
 
 	if ( m_nFlags & TEXTUREFLAGS_POINTSAMPLE )

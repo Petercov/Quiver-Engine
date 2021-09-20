@@ -1377,13 +1377,32 @@ void C_BaseEntity::ComputeWorldSpaceSurroundingBox( Vector *pVecWorldMins, Vecto
 void C_BaseEntity::ReceiveMessage( int classID, bf_read &msg )
 {
 	// BaseEntity doesn't have a base class we could relay this message to
-	Assert( classID == GetClientClass()->m_ClassID );
+	Assert( classID == ThisClass::GetClientClass()->m_ClassID );
 	
 	int messageType = msg.ReadByte();
 	switch( messageType )
 	{
 		case BASEENTITY_MSG_REMOVE_DECALS:	RemoveAllDecals();
 											break;
+
+		case BASEENTITY_MSG_SNATCH_MODEL_INSTANCE:
+			// Model instance snatching from input to this entity.
+			int eIndex = msg.ReadShort();
+			C_BaseEntity* c = ClientEntityList().GetEnt(eIndex);
+			if (c) {
+				if (c->SnatchModelInstance(this))
+				{
+					// This will redirect any future impact decals to the ragdoll, 
+					// allowing the impact decals from a killing shot to appear on it as well.
+					c->m_bUseRagdollModelInstance = true;
+					c->m_RagdollModelInstance = m_ModelInstance;
+				}
+			}
+			else {
+				DevMsg("Tried to snatch model instance with nonexistent entity!\n");
+			}
+			break;
+
 	}
 }
 
@@ -3492,15 +3511,24 @@ void C_BaseEntity::AddStudioDecal( const Ray_t& ray, int hitbox, int decalIndex,
 		// Choose a more accurate normal direction
 		// Also, since we have more accurate info, we can avoid pokethru
 		Vector temp;
-		VectorSubtract( tr.endpos, tr.plane.normal, temp );
+		VectorSubtract(tr.endpos, tr.plane.normal, temp);
 		Ray_t betterRay;
-		betterRay.Init( tr.endpos, temp );
-		modelrender->AddDecal( m_ModelInstance, betterRay, up, decalIndex, GetStudioBody(), true, maxLODToDecal );
+		betterRay.Init(tr.endpos, temp);
+		// New code:
+		ModelInstanceHandle_t i = GetDecalModelInstance();
+		modelrender->AddDecal(i, betterRay, up, decalIndex, GetStudioBody(), true, maxLODToDecal);
+		// Old code:
+			//modelrender->AddDecal( m_ModelInstance, betterRay, up, decalIndex, GetStudioBody(), true, maxLODToDecal );
 	}
 	else
 	{
-		modelrender->AddDecal( m_ModelInstance, ray, up, decalIndex, GetStudioBody(), false, maxLODToDecal );
+		// New code:
+		ModelInstanceHandle_t i = GetDecalModelInstance();
+		modelrender->AddDecal(i, ray, up, decalIndex, GetStudioBody(), false, maxLODToDecal);
+		// Old code:
+			//modelrender->AddDecal( m_ModelInstance, ray, up, decalIndex, GetStudioBody(), false, maxLODToDecal );
 	}
+
 }
 
 
@@ -3569,7 +3597,7 @@ void C_BaseEntity::RemoveAllDecals( void )
 bool C_BaseEntity::SnatchModelInstance( C_BaseEntity *pToEntity )
 {
 	if ( !modelrender->ChangeInstance(  GetModelInstance(), pToEntity ) )
-		return false;  // engine could move modle handle
+		return false;  // engine couldn't move modle handle
 
 	// remove old handle from toentity if any
 	if ( pToEntity->GetModelInstance() != MODEL_INSTANCE_INVALID )
@@ -6204,3 +6232,12 @@ void CC_CL_Find_Ent_Index( const CCommand& args )
 	}
 }
 static ConCommand cl_find_ent_index("cl_find_ent_index", CC_CL_Find_Ent_Index, "Display data for clientside entity matching specified index.\nFormat: cl_find_ent_index <index>\n", FCVAR_CHEAT);
+
+ModelInstanceHandle_t C_BaseEntity::GetDecalModelInstance() {
+	ModelInstanceHandle_t output = m_ModelInstance;
+	if (m_bUseRagdollModelInstance && m_RagdollModelInstance != MODEL_INSTANCE_INVALID) {
+		// Use our ragdoll model instance so any decals appear on it instead.
+		output = m_RagdollModelInstance;
+	}
+	return output;
+}

@@ -2794,13 +2794,14 @@ void CServerGameClients::NetworkIDValidated( const char *pszUserName, const char
 //-----------------------------------------------------------------------------
 static bf_write *g_pMsgBuffer = NULL;
 
-void EntityMessageBegin( CBaseEntity * entity, bool reliable /*= false*/ ) 
+void _EntityMessageBegin(CBaseEntity* entity, ServerClass *sclass, bool reliable)
 {
 	Assert( !g_pMsgBuffer );
 
 	Assert ( entity );
+	Assert(sclass);
 
-	g_pMsgBuffer = engine->EntityMessageBegin( entity->entindex(), entity->GetServerClass(), reliable );
+	g_pMsgBuffer = engine->EntityMessageBegin( entity->entindex(), sclass, reliable );
 }
 
 void UserMessageBegin( IRecipientFilter& filter, const char *messagename )

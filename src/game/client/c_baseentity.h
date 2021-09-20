@@ -1132,6 +1132,7 @@ public:
 
 	// Gets the model instance + shadow handle
 	virtual ModelInstanceHandle_t GetModelInstance() { return m_ModelInstance; }
+	virtual ModelInstanceHandle_t GetDecalModelInstance();
 	void SetModelInstance( ModelInstanceHandle_t hInstance) { m_ModelInstance = hInstance; }
 	bool SnatchModelInstance( C_BaseEntity * pToEntity );
 	virtual ClientShadowHandle_t GetShadowHandle() const	{ return m_ShadowHandle; }
@@ -1612,6 +1613,10 @@ public:
 	float							m_fRenderingClipPlane[4]; //world space clip plane when drawing
 	bool							m_bEnableRenderingClipPlane; //true to use the custom clip plane when drawing
 	float *							GetRenderClipPlane( void ); // Rendering clip plane, should be 4 floats, return value of NULL indicates a disabled render clip plane
+
+protected:
+	bool m_bUseRagdollModelInstance = false;
+	ModelInstanceHandle_t m_RagdollModelInstance = MODEL_INSTANCE_INVALID;
 
 protected:
 

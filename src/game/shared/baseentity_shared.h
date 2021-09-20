@@ -249,5 +249,7 @@ inline bool CBaseEntity::IsEffectActive( int nEffects ) const
 
 // Shared EntityMessage between game and client .dlls
 #define BASEENTITY_MSG_REMOVE_DECALS	1
+#define BASEENTITY_MSG_SNATCH_MODEL_INSTANCE 64
+
 
 #endif // BASEENTITY_SHARED_H

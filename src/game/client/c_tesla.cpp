@@ -24,6 +24,13 @@ C_Tesla::C_Tesla()
 
 void C_Tesla::ReceiveMessage( int classID, bf_read &msg )
 {
+	if (classID != ThisClass::GetClientClass()->m_ClassID)
+	{
+		// message is for subclass
+		BaseClass::ReceiveMessage(classID, msg);
+		return;
+	}
+
 	CTeslaInfo teslaInfo;
 
 	msg.ReadBitVec3Coord( teslaInfo.m_vPos );

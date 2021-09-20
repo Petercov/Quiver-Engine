@@ -74,7 +74,7 @@ const char *GetParticleSystemNameFromIndex( int nIndex );
 
 
 class IRecipientFilter;
-void EntityMessageBegin( CBaseEntity * entity, bool reliable = false );
+void _EntityMessageBegin(CBaseEntity* entity, ServerClass* sclass, bool reliable);
 void UserMessageBegin( IRecipientFilter& filter, const char *messagename );
 void MessageEnd( void );
 
