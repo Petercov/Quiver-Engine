@@ -123,6 +123,7 @@ modeswitchsave.tga
 *.hl2
 *.hl3
 *.sav
+save/*.tga
 
 *.lst
 
