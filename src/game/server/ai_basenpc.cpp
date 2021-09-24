@@ -3861,6 +3861,31 @@ void CAI_BaseNPC::SetPlayerAvoidState( void )
 	}
 }
 
+void CAI_BaseNPC::RagdollMode_UnragdollCleanup()
+{
+	SetHullSizeNormal(true);
+	SetupVPhysicsHull();
+
+	SetIdealState(NPC_STATE_ALERT);
+}
+
+void CAI_BaseNPC::RagdollMode_Enable(const CTakeDamageInfo& info, int forceBone)
+{
+	BaseClass::RagdollMode_Enable(info, forceBone);
+	SetIdealState(NPC_STATE_PRONE);
+}
+
+void CAI_BaseNPC::InputEnableRagdoll(inputdata_t& inputdata)
+{
+	CTakeDamageInfo info(this, inputdata.pActivator, 0.f, DMG_GENERIC);
+	RagdollMode_Enable(info, -1);
+}
+
+void CAI_BaseNPC::InputDisableRagdoll(inputdata_t& inputdata)
+{
+	RagdollMode_Disable();
+}
+
 //-----------------------------------------------------------------------------
 // Purpose: Enables player avoidance when the player's vphysics shadow penetrates our vphysics shadow.  This can
 // happen when the player is hit by a combine ball, which pushes them into an adjacent npc.  Subclasses should
@@ -10747,6 +10772,9 @@ BEGIN_DATADESC( CAI_BaseNPC )
 	DEFINE_INPUTFUNC( FIELD_VOID,	"UnholsterWeapon", InputUnholsterWeapon ),
 	DEFINE_INPUTFUNC( FIELD_STRING,	"ForceInteractionWithNPC", InputForceInteractionWithNPC ),
 	DEFINE_INPUTFUNC( FIELD_STRING, "UpdateEnemyMemory", InputUpdateEnemyMemory ),
+
+	DEFINE_INPUTFUNC(FIELD_VOID, "StartRagdoll", InputEnableRagdoll),
+	DEFINE_INPUTFUNC(FIELD_VOID, "StopRagdoll", InputDisableRagdoll),
 
 	// Function pointers
 	DEFINE_USEFUNC( NPCUse ),

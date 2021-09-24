@@ -268,6 +268,8 @@ public:
 	void							CreateUnragdollInfo( C_BaseAnimating *pRagdoll );
 	void							ForceSetupBonesAtTime( matrix3x4_t *pBonesOut, float flTime );
 	virtual void					GetRagdollInitBoneArrays( matrix3x4_t *pDeltaBones0, matrix3x4_t *pDeltaBones1, matrix3x4_t *pCurrentBones, float boneDt );
+	virtual bool					IsServerRagdoll() { return false; }
+	virtual void					SetupRagdollBones(CStudioHdr* hdr, bool* boneSimulated, CBoneAccessor& pBoneToWorld);
 
 	// For shadows rendering the correct body + sequence...
 	virtual int GetBody()			{ return m_nBody; }

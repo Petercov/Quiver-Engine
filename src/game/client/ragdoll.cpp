@@ -356,10 +356,13 @@ public:
 	void GetRenderBounds( Vector& theMins, Vector& theMaxs );
 	virtual void AddEntity( void );
 	virtual void AccumulateLayers( CStudioHdr *hdr, Vector pos[], Quaternion q[], float poseparam[], float currentTime, int boneMask );
-	virtual void BuildTransformations( CStudioHdr *pStudioHdr, Vector *pos, Quaternion q[], const matrix3x4_t &cameraTransform, int boneMask, CBoneBitList &boneComputed );
+	//virtual void BuildTransformations( CStudioHdr *pStudioHdr, Vector *pos, Quaternion q[], const matrix3x4_t &cameraTransform, int boneMask, CBoneBitList &boneComputed );
 	IPhysicsObject *GetElement( int elementNum );
 	virtual void UpdateOnRemove();
 	virtual float LastBoneChangedTime();
+
+	virtual bool					IsServerRagdoll() { return true; }
+	virtual void					SetupRagdollBones(CStudioHdr* hdr, bool* boneSimulated, CBoneAccessor& pBoneToWorld);
 
 	// Incoming from network
 	Vector		m_ragPos[RAGDOLL_MAX_ELEMENTS];
@@ -532,6 +535,40 @@ void C_ServerRagdoll::AccumulateLayers( CStudioHdr *hdr, Vector pos[], Quaternio
 	}
 }
 
+void C_ServerRagdoll::SetupRagdollBones(CStudioHdr* hdr, bool* boneSimulated, CBoneAccessor& pBoneToWorld)
+{
+	if (!hdr)
+		return;
+
+	mstudioseqdesc_t* pSeqDesc = NULL;
+	if (m_nOverlaySequence >= 0 && m_nOverlaySequence < hdr->GetNumSeq())
+	{
+		pSeqDesc = &hdr->pSeqdesc(m_nOverlaySequence);
+	}
+
+	for (int i = 0; i < m_elementCount; i++)
+	{
+		int index = m_boneIndex[i];
+		if (index >= 0)
+		{
+			boneSimulated[index] = true;
+			matrix3x4_t& matrix = pBoneToWorld.GetBoneForWrite(index);
+
+			if (m_flBlendWeightCurrent != 0.0f && pSeqDesc &&
+				// FIXME: this bone access is illegal
+				pSeqDesc->weight(index) != 0.0f)
+			{
+				// Use the animated bone position instead
+				boneSimulated[index] = false;
+			}
+			else
+			{
+				AngleMatrix(m_ragAngles[i], m_ragPos[i], matrix);
+			}
+		}
+	}
+}
+/*
 void C_ServerRagdoll::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quaternion q[], const matrix3x4_t &cameraTransform, int boneMask, CBoneBitList &boneComputed )
 {
 	if ( !hdr )
@@ -608,7 +645,7 @@ void C_ServerRagdoll::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 		}
 	}
 }
-
+*/
 IPhysicsObject *C_ServerRagdoll::GetElement( int elementNum ) 
 { 
 	return NULL;
@@ -628,6 +665,8 @@ void C_ServerRagdoll::UpdateOnRemove()
 		// Need to tell C_BaseAnimating to blend out of the ragdoll data that we received last
 		C_BaseAnimating::AutoAllowBoneAccess boneaccess( true, false );
 		anim->CreateUnragdollInfo( this );
+		if (SnatchModelInstance(anim))
+			anim->m_bUseRagdollModelInstance = false;
 	}
 
 	// Do last to mimic destrictor order

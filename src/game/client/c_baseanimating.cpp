@@ -1241,6 +1241,17 @@ void C_BaseAnimating::GetCachedBoneMatrix( int boneIndex, matrix3x4_t &out )
 	MatrixCopy( GetBone( boneIndex ), out );
 }
 
+void C_BaseAnimating::SetupRagdollBones(CStudioHdr* hdr, bool* boneSimulated, CBoneAccessor& pBoneToWorld)
+{
+	if (!hdr)
+		return;
+
+	if (m_pRagdoll)
+	{
+		mstudiobone_t* pbones = hdr->pBone(0);
+		m_pRagdoll->RagdollBone(this, pbones, hdr->numbones(), boneSimulated, pBoneToWorld);
+	}
+}
 
 //-----------------------------------------------------------------------------
 // Purpose:	move position and rotation transforms into global matrices
@@ -1259,7 +1270,7 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 	memset( boneSimulated, 0, sizeof(boneSimulated) );
 	mstudiobone_t *pbones = hdr->pBone( 0 );
 
-	if ( m_pRagdoll )
+	if ( m_pRagdoll || IsServerRagdoll())
 	{
 		// simulate bones and update flags
 		int oldWritableBones = m_BoneAccessor.GetWritableBones();
@@ -1267,7 +1278,7 @@ void C_BaseAnimating::BuildTransformations( CStudioHdr *hdr, Vector *pos, Quater
 		m_BoneAccessor.SetWritableBones( BONE_USED_BY_ANYTHING );
 		m_BoneAccessor.SetReadableBones( BONE_USED_BY_ANYTHING );
 		
-		m_pRagdoll->RagdollBone( this, pbones, hdr->numbones(), boneSimulated, m_BoneAccessor );
+		SetupRagdollBones( hdr, boneSimulated, m_BoneAccessor );
 		
 		m_BoneAccessor.SetWritableBones( oldWritableBones );
 		m_BoneAccessor.SetReadableBones( oldReadableBones );
@@ -2611,7 +2622,7 @@ bool C_BaseAnimating::SetupBones( matrix3x4_t *pBoneToWorldOut, int nMaxBones, i
 
 			CBoneBitList boneComputed;
 			// don't calculate IK on ragdolls
-			if ( m_pIk && !IsRagdoll() )
+			if ( m_pIk && !IsRagdoll() && !IsServerRagdoll())
 			{
 				UpdateIKLocks( currentTime );
 

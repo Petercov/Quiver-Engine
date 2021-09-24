@@ -506,7 +506,7 @@ public:
 	void				SaveConditions( ISave &save, const CAI_ScheduleBits &conditions );
 	void				RestoreConditions( IRestore &restore, CAI_ScheduleBits *pConditions );
 
-	bool				ShouldSavePhysics()	{ return false; }
+	bool				ShouldSavePhysics()	{ return InRagdollMode(); }
 	virtual unsigned int	PhysicsSolidMaskForEntity( void ) const;
 
 	virtual bool KeyValue( const char *szKeyName, const char *szValue );
@@ -2123,6 +2123,15 @@ public:
 	void				GetPlayerAvoidBounds( Vector *pMins, Vector *pMaxs );
 
 	void				StartPingEffect( void ) { m_flTimePingEffect = gpGlobals->curtime + 2.0f; DispatchUpdateTransmitState(); }
+
+protected:
+	virtual void RagdollMode_UnragdollCleanup();
+
+public:
+	virtual void RagdollMode_Enable(const CTakeDamageInfo& info, int forceBone);
+
+	void				InputEnableRagdoll(inputdata_t& inputdata);
+	void				InputDisableRagdoll(inputdata_t& inputdata);
 };
 
 

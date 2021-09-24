@@ -13,13 +13,12 @@
 #include "ragdoll_shared.h"
 #include "player_pickup.h"
 
-
 //-----------------------------------------------------------------------------
 // Purpose: entity class for simple ragdoll physics
 //-----------------------------------------------------------------------------
 
 // UNDONE: Move this to a private header
-class CRagdollProp : public CBaseAnimating, public CDefaultPlayerPickupVPhysics
+class CRagdollProp : public CBaseAnimating, public CDefaultPlayerPickupVPhysics, public IServerRagdoll
 {
 	DECLARE_CLASS( CRagdollProp, CBaseAnimating );
 
@@ -67,7 +66,7 @@ public:
 	void RecheckCollisionFilter( void );
 	void SetDebrisThink();
 	void ClearFlagsThink( void );
-	inline ragdoll_t *GetRagdoll( void ) { return &m_ragdoll; }
+	virtual ragdoll_t *GetRagdoll( void ) override { return &m_ragdoll; }
 
 	virtual bool	IsRagdoll() { return true; }
 
@@ -148,6 +147,8 @@ private:
 	Vector				m_ragdollMins[RAGDOLL_MAX_ELEMENTS];
 	Vector				m_ragdollMaxs[RAGDOLL_MAX_ELEMENTS];
 };
+
+void SyncAnimatingWithPhysics(CBaseAnimating* pAnimating);
 
 CBaseEntity *CreateServerRagdoll( CBaseAnimating *pAnimating, int forceBone, const CTakeDamageInfo &info, int collisionGroup, bool bUseLRURetirement = false );
 CRagdollProp *CreateServerRagdollAttached( CBaseAnimating *pAnimating, const Vector &vecForce, int forceBone, int collisionGroup, IPhysicsObject *pAttached, CBaseAnimating *pParentEntity, int boneAttach, const Vector &originAttached, int parentBoneAttach, const Vector &boneOrigin );

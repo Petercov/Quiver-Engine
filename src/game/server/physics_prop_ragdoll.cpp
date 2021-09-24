@@ -1241,23 +1241,23 @@ LINK_ENTITY_TO_CLASS( prop_ragdoll_attached, CRagdollPropAttached );
 EXTERN_SEND_TABLE(DT_Ragdoll_Attached)
 
 IMPLEMENT_SERVERCLASS_ST(CRagdollPropAttached, DT_Ragdoll_Attached)
-	SendPropInt( SENDINFO( m_boneIndexAttached ), MAXSTUDIOBONEBITS, SPROP_UNSIGNED ),
-	SendPropInt( SENDINFO( m_ragdollAttachedObjectIndex ), RAGDOLL_INDEX_BITS, SPROP_UNSIGNED ),
-	SendPropVector(SENDINFO(m_attachmentPointBoneSpace), -1,  SPROP_COORD ),
-	SendPropVector(SENDINFO(m_attachmentPointRagdollSpace), -1,  SPROP_COORD ),
+SendPropInt(SENDINFO(m_boneIndexAttached), MAXSTUDIOBONEBITS, SPROP_UNSIGNED),
+SendPropInt(SENDINFO(m_ragdollAttachedObjectIndex), RAGDOLL_INDEX_BITS, SPROP_UNSIGNED),
+SendPropVector(SENDINFO(m_attachmentPointBoneSpace), -1, SPROP_COORD),
+SendPropVector(SENDINFO(m_attachmentPointRagdollSpace), -1, SPROP_COORD),
 END_SEND_TABLE()
 
 BEGIN_DATADESC(CRagdollPropAttached)
-	DEFINE_FIELD( m_boneIndexAttached,	FIELD_INTEGER ),
-	DEFINE_FIELD( m_ragdollAttachedObjectIndex, FIELD_INTEGER ),
-	DEFINE_FIELD( m_attachmentPointBoneSpace,	FIELD_VECTOR ),
-	DEFINE_FIELD( m_attachmentPointRagdollSpace, FIELD_VECTOR ),
-	DEFINE_FIELD( m_bShouldDetach, FIELD_BOOLEAN ),
-	DEFINE_PHYSPTR( m_pAttachConstraint ),
-END_DATADESC()
+DEFINE_FIELD(m_boneIndexAttached, FIELD_INTEGER),
+DEFINE_FIELD(m_ragdollAttachedObjectIndex, FIELD_INTEGER),
+DEFINE_FIELD(m_attachmentPointBoneSpace, FIELD_VECTOR),
+DEFINE_FIELD(m_attachmentPointRagdollSpace, FIELD_VECTOR),
+DEFINE_FIELD(m_bShouldDetach, FIELD_BOOLEAN),
+DEFINE_PHYSPTR(m_pAttachConstraint),
+END_DATADESC();
 
 
-static void SyncAnimatingWithPhysics( CBaseAnimating *pAnimating )
+void SyncAnimatingWithPhysics( CBaseAnimating *pAnimating )
 {
 	IPhysicsObject *pPhysics = pAnimating->VPhysicsGetObject();
 	if ( pPhysics )
@@ -1626,7 +1626,7 @@ bool Ragdoll_IsPropRagdoll( CBaseEntity *pEntity )
 
 ragdoll_t *Ragdoll_GetRagdoll( CBaseEntity *pEntity )
 {
-	CRagdollProp *pProp = dynamic_cast<CRagdollProp *>(pEntity);
+	IServerRagdoll *pProp = dynamic_cast<IServerRagdoll *>(pEntity);
 	if ( pProp )
 		return pProp->GetRagdoll();
 	return NULL;

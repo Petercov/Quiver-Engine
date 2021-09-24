@@ -52,7 +52,7 @@ LINK_ENTITY_TO_CLASS( env_ragdoll_boogie, CRagdollBoogie );
 CRagdollBoogie *CRagdollBoogie::Create( CBaseEntity *pTarget, float flMagnitude, 
 	float flStartTime, float flLengthTime, int nSpawnFlags )
 {
-	CRagdollProp *pRagdoll = dynamic_cast< CRagdollProp* >( pTarget );
+	ragdoll_t* pRagdoll = Ragdoll_GetRagdoll(pTarget);
 	if ( !pRagdoll )
 		return NULL;
 
@@ -217,8 +217,8 @@ void CRagdollBoogie::SetMagnitude( float flMagnitude )
 //-----------------------------------------------------------------------------
 void CRagdollBoogie::BoogieThink( void )
 {
-	CRagdollProp *pRagdoll = dynamic_cast< CRagdollProp* >( GetMoveParent() );
-	if ( !pRagdoll )
+	ragdoll_t* pRagdollPhys = Ragdoll_GetRagdoll( GetMoveParent() );
+	if ( !pRagdollPhys )
 	{
 		UTIL_Remove( this );
 		return;
@@ -251,7 +251,6 @@ void CRagdollBoogie::BoogieThink( void )
 #ifndef _XBOX
 	if ( m_nSuppressionCount == 0 )
 	{
-		ragdoll_t *pRagdollPhys = pRagdoll->GetRagdoll( );
 		for ( int j = 0; j < pRagdollPhys->listCount; ++j )
 		{
 			float flMass = pRagdollPhys->list[j].pObject->GetMass();

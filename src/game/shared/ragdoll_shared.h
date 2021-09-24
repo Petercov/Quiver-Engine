@@ -25,6 +25,7 @@ class CBoneAccessor;
 
 #include "mathlib/vector.h"
 #include "bone_accessor.h"
+#include "igamesystem.h"
 
 // UNDONE: Remove and make dynamic?
 #define RAGDOLL_MAX_ELEMENTS	24
@@ -77,6 +78,15 @@ struct ragdollparams_t
 	float		jointFrictionScale;
 	bool		allowStretch;
 };
+
+#ifndef CLIENT_DLL
+class IServerRagdoll
+{
+public:
+	virtual ragdoll_t* GetRagdoll(void) = 0;
+};
+#endif // !CLIENT_DLL
+
 
 //-----------------------------------------------------------------------------
 // This hooks the main game systems callbacks to allow the AI system to manage memory

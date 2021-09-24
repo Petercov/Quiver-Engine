@@ -28,6 +28,7 @@
 #include "utllinkedlist.h"
 #include "ai_hull.h"
 #include "physics_impact_damage.h"
+#include "ragdoll_shared.h"
 
 class CScriptedTarget;
 typedef CHandle<CBaseCombatWeapon> CBaseCombatWeaponHandle;
@@ -105,7 +106,7 @@ struct Relationship_t
 // Purpose: This should contain all of the combat entry points / functionality 
 // that are common between NPCs and players
 //-----------------------------------------------------------------------------
-class CBaseCombatCharacter : public CBaseFlex
+class CBaseCombatCharacter : public CBaseFlex, public IServerRagdoll
 {
 	DECLARE_CLASS( CBaseCombatCharacter, CBaseFlex );
 
@@ -216,6 +217,7 @@ public:
 	virtual bool			RemovePlayerItem( CBaseCombatWeapon *pItem ) { return false; }
 
 	virtual bool			CanBecomeServerRagdoll( void ) { return true; }
+	virtual bool			IsRagdoll() { return InRagdollMode() || BaseClass::IsRagdoll(); }
 
 	// -----------------------
 	// Damage
@@ -449,6 +451,52 @@ private:
 	CNetworkHandle( CBaseCombatWeapon, m_hActiveWeapon );
 
 	friend class CCleanupDefaultRelationShips;
+
+private:
+	ragdoll_t			m_ragdoll;
+
+	CNetworkArray(Vector, m_ragPos, RAGDOLL_MAX_ELEMENTS);
+	CNetworkArray(QAngle, m_ragAngles, RAGDOLL_MAX_ELEMENTS);
+
+	CNetworkVar(bool, m_bRagdollEnabled);
+
+	Vector				m_ragdollMins[RAGDOLL_MAX_ELEMENTS];
+	Vector				m_ragdollMaxs[RAGDOLL_MAX_ELEMENTS];
+
+	unsigned char					m_PreRagdollMoveType;
+	unsigned char					m_PreRagdollMoveCollide;
+	unsigned char					m_PreRagdollSolidFlags;
+	unsigned char					m_PreRagdollSolidType;
+
+	unsigned int		m_lastRagdollUpdateTickCount;
+	bool				m_ragAllAsleep;
+
+protected:
+	void UpdateRagdollNetworkDataFromVPhysics(IPhysicsObject* pPhysics, int index);
+	void RecheckRagdollCollisionFilter(void);
+
+	virtual void RagdollMode_UnragdollCleanup();
+
+public:
+	bool	InRagdollMode() { return m_bRagdollEnabled.Get() && m_ragdoll.listCount > 0; }
+
+	virtual void RagdollMode_Enable(const CTakeDamageInfo& info, int forceBone);
+	virtual void RagdollMode_Disable();
+
+	// destroy and remove the physics object for this entity
+	virtual void	VPhysicsDestroyObject(void);
+	virtual int VPhysicsGetObjectList(IPhysicsObject** pList, int listMax);
+	virtual void VPhysicsCollision(int index, gamevcollisionevent_t* pEvent);
+
+	virtual void TraceAttack(const CTakeDamageInfo& info, const Vector& dir, trace_t* ptr);
+	virtual bool TestCollision(const Ray_t& ray, unsigned int mask, trace_t& trace);
+	virtual void Teleport(const Vector* newPosition, const QAngle* newAngles, const Vector* newVelocity);
+	virtual void SetupBones(matrix3x4_t* pBoneToWorld, int boneMask);
+
+	virtual void OnSave(IEntitySaveUtils* pUtils);
+	virtual void OnRestore();
+
+	virtual ragdoll_t* GetRagdoll(void) override { return &m_ragdoll; }
 };
 
 //-----------------------------------------------------------------------------

@@ -17,6 +17,7 @@
 #include "ndebugoverlay.h"
 #include "player.h"
 #include "physics.h"
+#include "physics_saverestore.h"
 #include "engine/IEngineSound.h"
 #include "tier1/strtools.h"
 #include "sendproxy.h"
@@ -37,6 +38,8 @@
 #include "RagdollBoogie.h"
 #include "rumble_shared.h"
 #include "saverestoretypes.h"
+#include "bone_setup.h"
+#include <datacache\imdlcache.h>
 
 #ifdef HL2_DLL
 #include "weapon_physcannon.h"
@@ -67,6 +70,12 @@ ConVar ai_use_visibility_cache( "ai_use_visibility_cache", "1" );
 #else
 #define ShouldUseVisibilityCache() true
 #endif
+
+#define DEFINE_RAGDOLL_ELEMENT( i ) \
+	DEFINE_FIELD( m_ragdoll.list[i].originParentSpace, FIELD_VECTOR ), \
+	DEFINE_PHYSPTR( m_ragdoll.list[i].pObject ), \
+	DEFINE_PHYSPTR( m_ragdoll.list[i].pConstraint ), \
+	DEFINE_FIELD( m_ragdoll.list[i].parentIndex, FIELD_INTEGER )
 
 BEGIN_DATADESC( CBaseCombatCharacter )
 
@@ -100,6 +109,51 @@ BEGIN_DATADESC( CBaseCombatCharacter )
 	DEFINE_FIELD( m_bPreventWeaponPickup, FIELD_BOOLEAN ),
 
 	DEFINE_INPUTFUNC( FIELD_VOID, "KilledNPC", InputKilledNPC ),
+
+	DEFINE_AUTO_ARRAY(m_ragdoll.boneIndex, FIELD_INTEGER),
+	DEFINE_AUTO_ARRAY(m_ragPos, FIELD_POSITION_VECTOR),
+	DEFINE_AUTO_ARRAY(m_ragAngles, FIELD_VECTOR),
+
+	DEFINE_FIELD(m_lastRagdollUpdateTickCount, FIELD_TICK),
+	DEFINE_FIELD(m_ragAllAsleep, FIELD_BOOLEAN),
+	DEFINE_FIELD(m_bRagdollEnabled, FIELD_BOOLEAN),
+
+	DEFINE_AUTO_ARRAY(m_ragdollMins, FIELD_VECTOR),
+	DEFINE_AUTO_ARRAY(m_ragdollMaxs, FIELD_VECTOR),
+
+	DEFINE_FIELD(m_PreRagdollMoveType, FIELD_CHARACTER),
+	DEFINE_FIELD(m_PreRagdollMoveCollide, FIELD_CHARACTER),
+	DEFINE_FIELD(m_PreRagdollSolidFlags, FIELD_CHARACTER),
+	DEFINE_FIELD(m_PreRagdollSolidType, FIELD_CHARACTER),
+
+	DEFINE_FIELD(m_ragdoll.listCount, FIELD_INTEGER),
+	DEFINE_FIELD(m_ragdoll.allowStretch, FIELD_BOOLEAN),
+	DEFINE_PHYSPTR(m_ragdoll.pGroup),
+
+	//DEFINE_RAGDOLL_ELEMENT( 0 ),
+	DEFINE_RAGDOLL_ELEMENT(1),
+	DEFINE_RAGDOLL_ELEMENT(2),
+	DEFINE_RAGDOLL_ELEMENT(3),
+	DEFINE_RAGDOLL_ELEMENT(4),
+	DEFINE_RAGDOLL_ELEMENT(5),
+	DEFINE_RAGDOLL_ELEMENT(6),
+	DEFINE_RAGDOLL_ELEMENT(7),
+	DEFINE_RAGDOLL_ELEMENT(8),
+	DEFINE_RAGDOLL_ELEMENT(9),
+	DEFINE_RAGDOLL_ELEMENT(10),
+	DEFINE_RAGDOLL_ELEMENT(11),
+	DEFINE_RAGDOLL_ELEMENT(12),
+	DEFINE_RAGDOLL_ELEMENT(13),
+	DEFINE_RAGDOLL_ELEMENT(14),
+	DEFINE_RAGDOLL_ELEMENT(15),
+	DEFINE_RAGDOLL_ELEMENT(16),
+	DEFINE_RAGDOLL_ELEMENT(17),
+	DEFINE_RAGDOLL_ELEMENT(18),
+	DEFINE_RAGDOLL_ELEMENT(19),
+	DEFINE_RAGDOLL_ELEMENT(20),
+	DEFINE_RAGDOLL_ELEMENT(21),
+	DEFINE_RAGDOLL_ELEMENT(22),
+	DEFINE_RAGDOLL_ELEMENT(23),
 
 END_DATADESC()
 
@@ -192,6 +246,10 @@ IMPLEMENT_SERVERCLASS_ST(CBaseCombatCharacter, DT_BaseCombatCharacter)
 #ifdef INVASION_DLL
 	SendPropInt( SENDINFO(m_iPowerups), MAX_POWERUPS, SPROP_UNSIGNED ), 
 #endif
+
+	SendPropArray(SendPropQAngles(SENDINFO_ARRAY(m_ragAngles), 13, SPROP_CHANGES_OFTEN), m_ragAngles),
+	SendPropArray(SendPropVector(SENDINFO_ARRAY(m_ragPos), -1, SPROP_COORD | SPROP_CHANGES_OFTEN), m_ragPos),
+	SendPropBool(SENDINFO(m_bRagdollEnabled)),
 
 END_SEND_TABLE()
 
@@ -2897,8 +2955,101 @@ int CBaseCombatCharacter::GiveAmmo( int iCount, const char *szName, bool bSuppre
 ConVar	phys_stressbodyweights( "phys_stressbodyweights", "5.0" );
 void CBaseCombatCharacter::VPhysicsUpdate( IPhysicsObject *pPhysics )
 {
-	ApplyStressDamage( pPhysics, false );
-	BaseClass::VPhysicsUpdate( pPhysics );
+	if (!InRagdollMode())
+	{
+		ApplyStressDamage(pPhysics, false);
+		BaseClass::VPhysicsUpdate(pPhysics);
+	}
+	else
+	{
+		ApplyStressDamage(pPhysics, true);
+
+		if (m_lastRagdollUpdateTickCount == (unsigned int)gpGlobals->tickcount)
+			return;
+
+		m_lastRagdollUpdateTickCount = gpGlobals->tickcount;
+		//NetworkStateChanged();
+
+		matrix3x4_t boneToWorld[MAXSTUDIOBONES];
+		QAngle angles;
+		Vector surroundingMins, surroundingMaxs;
+
+		int i;
+		for (i = 0; i < m_ragdoll.listCount; i++)
+		{
+			CBoneAccessor boneaccessor(boneToWorld);
+			if (RagdollGetBoneMatrix(m_ragdoll, boneaccessor, i))
+			{
+				Vector vNewPos;
+				MatrixAngles(boneToWorld[m_ragdoll.boneIndex[i]], angles, vNewPos);
+				m_ragPos.Set(i, vNewPos);
+				m_ragAngles.Set(i, angles);
+			}
+			else
+			{
+				m_ragPos.GetForModify(i).Init();
+				m_ragAngles.GetForModify(i).Init();
+			}
+		}
+
+		// BUGBUG: Use the ragdollmins/maxs to do this instead of the collides
+		m_ragAllAsleep = RagdollIsAsleep(m_ragdoll);
+
+		// Don't scream after you've come to rest
+		if (!m_ragAllAsleep)
+		{
+			if (m_ragdoll.pGroup->IsInErrorState())
+			{
+				RagdollSolveSeparation(m_ragdoll, this);
+			}
+		}
+
+		// Interactive debris converts back to debris when it comes to rest
+		if (m_ragAllAsleep && GetCollisionGroup() == COLLISION_GROUP_INTERACTIVE_DEBRIS)
+		{
+			SetCollisionGroup(COLLISION_GROUP_DEBRIS);
+			RecheckRagdollCollisionFilter();
+			//SetContextThink(NULL, gpGlobals->curtime, s_pDebrisContext);
+		}
+
+		Vector vecFullMins, vecFullMaxs;
+		vecFullMins = m_ragPos[0];
+		vecFullMaxs = m_ragPos[0];
+		for (i = 0; i < m_ragdoll.listCount; i++)
+		{
+			Vector mins, maxs;
+			matrix3x4_t update;
+			if (!m_ragdoll.list[i].pObject)
+			{
+				m_ragdollMins[i].Init();
+				m_ragdollMaxs[i].Init();
+				continue;
+			}
+			m_ragdoll.list[i].pObject->GetPositionMatrix(&update);
+			TransformAABB(update, m_ragdollMins[i], m_ragdollMaxs[i], mins, maxs);
+			for (int j = 0; j < 3; j++)
+			{
+				if (mins[j] < vecFullMins[j])
+				{
+					vecFullMins[j] = mins[j];
+				}
+				if (maxs[j] > vecFullMaxs[j])
+				{
+					vecFullMaxs[j] = maxs[j];
+				}
+			}
+		}
+
+		SetAbsOrigin(m_ragPos[0]);
+		SetAbsAngles(vec3_angle);
+		const Vector& vecOrigin = CollisionProp()->GetCollisionOrigin();
+		CollisionProp()->AddSolidFlags(FSOLID_FORCE_WORLD_ALIGNED);
+		CollisionProp()->SetSurroundingBoundsType(USE_COLLISION_BOUNDS_NEVER_VPHYSICS);
+		SetCollisionBounds(vecFullMins - vecOrigin, vecFullMaxs - vecOrigin);
+		CollisionProp()->MarkSurroundingBoundsDirty();
+
+		PhysicsTouchTriggers();
+	}
 }
 
 float CBaseCombatCharacter::CalculatePhysicsStressDamage( vphysics_objectstress_t *pStressOut, IPhysicsObject *pPhysics )
@@ -2963,6 +3114,9 @@ ConVar	phys_upimpactforcescale( "phys_upimpactforcescale", "0.375" );
 
 void CBaseCombatCharacter::VPhysicsShadowCollision( int index, gamevcollisionevent_t *pEvent )
 {
+	if (InRagdollMode())
+		return;
+
 	int otherIndex = !index;
 	CBaseEntity *pOther = pEvent->pEntities[otherIndex];
 	IPhysicsObject *pOtherPhysics = pEvent->pObjects[otherIndex];
@@ -3198,4 +3352,468 @@ void CBaseCombatCharacter::DoMuzzleFlash()
 	{
 		BaseClass::DoMuzzleFlash();
 	}
+}
+
+void CBaseCombatCharacter::UpdateRagdollNetworkDataFromVPhysics(IPhysicsObject* pPhysics, int index)
+{
+	Assert(index < m_ragdoll.listCount);
+
+	QAngle angles;
+	Vector vPos;
+	m_ragdoll.list[index].pObject->GetPosition(&vPos, &angles);
+	m_ragPos.Set(index, vPos);
+	m_ragAngles.Set(index, angles);
+
+	// move/relink if root moved
+	if (index == 0)
+	{
+		SetAbsOrigin(m_ragPos[0]);
+		PhysicsTouchTriggers();
+	}
+}
+
+void CBaseCombatCharacter::RecheckRagdollCollisionFilter(void)
+{
+	for (int i = 0; i < m_ragdoll.listCount; i++)
+	{
+		m_ragdoll.list[i].pObject->RecheckCollisionFilter();
+	}
+}
+
+void CBaseCombatCharacter::RagdollMode_UnragdollCleanup()
+{
+	CreateVPhysics();
+}
+
+void CBaseCombatCharacter::RagdollMode_Enable(const CTakeDamageInfo& info, int forceBone)
+{
+	if (InRagdollMode())
+		return;
+
+	if (VPhysicsGetObject())
+	{
+		if (info.GetDamageType() & (DMG_VEHICLE | DMG_CRUSH))
+		{
+			// if the entity was killed by physics or a vehicle, move to the vphysics shadow position before creating the ragdoll.
+			SyncAnimatingWithPhysics(this);
+		}
+
+		VPhysicsDestroyObject();
+	}
+
+	m_bRagdollEnabled = true;
+	matrix3x4_t pBoneToWorld[MAXSTUDIOBONES], pBoneToWorldNext[MAXSTUDIOBONES];
+	
+	const float dt = TICK_INTERVAL;
+
+	// NPC_STATE_DEAD npc's will have their COND_IN_PVS cleared, so this needs to force SetupBones to happen
+	unsigned short fPrevFlags = GetBoneCacheFlags();
+	SetBoneCacheFlags(BCF_NO_ANIMATION_SKIP);
+
+	// UNDONE: Extract velocity from bones via animation (like we do on the client)
+	// UNDONE: For now, just move each bone by the total entity velocity if set.
+	// Get Bones positions before
+	// Store current cycle
+	float fSequenceDuration = SequenceDuration();
+	float fSequenceTime = GetCycle() * fSequenceDuration;
+
+	float fCurCycle = GetCycle();
+	float fPreviousCycle = fmodf(1.f + fmodf((GetCycle() - (dt * GetPlaybackRate() * (1 / fSequenceDuration))), 1.f), 1.f);
+
+	// Get current bones positions
+	SetupBones(pBoneToWorldNext, BONE_USED_BY_ANYTHING);
+	// Get previous bones positions
+	SetCycle(fPreviousCycle);
+	SetupBones(pBoneToWorld, BONE_USED_BY_ANYTHING);
+	// Restore current cycle
+	SetCycle(fCurCycle);
+
+	// Reset previous bone flags
+	ClearBoneCacheFlags(BCF_NO_ANIMATION_SKIP);
+	SetBoneCacheFlags(fPrevFlags);
+
+	Vector vel = GetAbsVelocity();
+	if ((vel.IsZero()) && (dt > 0))
+	{
+		// Compute animation velocity
+		CStudioHdr* pstudiohdr = GetModelPtr();
+		if (pstudiohdr)
+		{
+			Vector deltaPos;
+			QAngle deltaAngles;
+			if (Studio_SeqMovement(pstudiohdr,
+				GetSequence(),
+				fPreviousCycle,
+				fCurCycle,
+				GetPoseParameterArray(),
+				deltaPos,
+				deltaAngles))
+			{
+				VectorRotate(deltaPos, EntityToWorldTransform(), vel);
+				vel /= dt;
+			}
+		}
+	}
+
+	if (vel.LengthSqr() > 0)
+	{
+		int numbones = GetModelPtr()->numbones();
+		vel *= dt;
+		for (int i = 0; i < numbones; i++)
+		{
+			Vector pos;
+			MatrixGetColumn(pBoneToWorld[i], 3, pos);
+			pos -= vel;
+			MatrixSetColumn(pos, 3, pBoneToWorld[i]);
+		}
+	}
+
+	m_PreRagdollMoveType = GetMoveType();
+	m_PreRagdollMoveCollide = GetMoveCollide();
+	m_PreRagdollSolidFlags = GetSolidFlags();
+	m_PreRagdollSolidType = GetSolid();
+
+	SetMoveType(MOVETYPE_VPHYSICS);
+	SetSolid(SOLID_VPHYSICS);
+	AddSolidFlags(FSOLID_CUSTOMRAYTEST | FSOLID_CUSTOMBOXTEST);
+
+	// this is useless info after the initial conditions are set
+	SetAbsAngles(vec3_angle);
+
+	ragdollparams_t params;
+	params.pGameData = static_cast<void*>(static_cast<CBaseEntity*>(this));
+	params.modelIndex = GetModelIndex();
+	params.pCollide = modelinfo->GetVCollide(params.modelIndex);
+	params.pStudioHdr = GetModelPtr();
+	params.forceVector = info.GetDamageForce();
+	params.forceBoneIndex = forceBone;
+	params.forcePosition = info.GetDamagePosition();
+	params.pCurrentBones = pBoneToWorldNext;
+	params.jointFrictionScale = 1.0f;
+	params.allowStretch = false;
+	RagdollCreate(m_ragdoll, params, physenv);
+	RagdollApplyAnimationAsVelocity(m_ragdoll, pBoneToWorld, pBoneToWorldNext, dt);
+
+	MEM_ALLOC_CREDIT();
+	RagdollActivate(m_ragdoll, params.pCollide, GetModelIndex(), true);
+
+	for (int i = 0; i < m_ragdoll.listCount; i++)
+	{
+		UpdateRagdollNetworkDataFromVPhysics(m_ragdoll.list[i].pObject, i);
+		g_pPhysSaveRestoreManager->AssociateModel(m_ragdoll.list[i].pObject, GetModelIndex());
+		physcollision->CollideGetAABB(&m_ragdollMins[i], &m_ragdollMaxs[i], m_ragdoll.list[i].pObject->GetCollide(), vec3_origin, vec3_angle);
+	}
+	VPhysicsSetObject(m_ragdoll.list[0].pObject);
+}
+
+void CBaseCombatCharacter::RagdollMode_Disable()
+{
+	if (!InRagdollMode())
+		return;
+
+	VPhysicsDestroyObject();
+	m_bRagdollEnabled = false;
+
+	SetSolid((SolidType_t)m_PreRagdollSolidType);
+	SetSolidFlags(m_PreRagdollSolidFlags);
+	SetMoveType((MoveType_t)m_PreRagdollMoveType, (MoveCollide_t)m_PreRagdollMoveCollide);
+
+	RagdollMode_UnragdollCleanup();
+}
+
+void CBaseCombatCharacter::VPhysicsDestroyObject(void)
+{
+	if (m_ragdoll.listCount <= 0)
+	{
+		BaseClass::VPhysicsDestroyObject();
+	}
+	else
+	{
+		for (int i = 0; i < m_ragdoll.listCount; i++)
+		{
+			if (m_ragdoll.list[i].pObject)
+			{
+				g_pPhysSaveRestoreManager->ForgetModel(m_ragdoll.list[i].pObject);
+			}
+		}
+
+		// Set to null so that the destructor's call to DestroyObject won't destroy
+		//  m_pObjects[ 0 ] twice since that's the physics object for the prop
+		VPhysicsSetObject(NULL);
+
+		RagdollDestroy(m_ragdoll);
+	}
+}
+
+int CBaseCombatCharacter::VPhysicsGetObjectList(IPhysicsObject** pList, int listMax)
+{
+	if (!InRagdollMode())
+		return BaseClass::VPhysicsGetObjectList(pList, listMax);
+
+	for (int i = 0; i < m_ragdoll.listCount; i++)
+	{
+		if (i < listMax)
+		{
+			pList[i] = m_ragdoll.list[i].pObject;
+		}
+	}
+
+	return m_ragdoll.listCount;
+}
+
+void CBaseCombatCharacter::VPhysicsCollision(int index, gamevcollisionevent_t* pEvent)
+{
+	BaseClass::VPhysicsCollision(index, pEvent);
+
+	if (InRagdollMode())
+	{
+		CBaseEntity* pHitEntity = pEvent->pEntities[!index];
+		if (pHitEntity == this)
+			return;
+
+		// Don't take physics damage from whoever's holding him with the physcannon.
+		if (VPhysicsGetObject() && (VPhysicsGetObject()->GetGameFlags() & FVPHYSICS_PLAYER_HELD))
+		{
+			if (pHitEntity && (pHitEntity == HasPhysicsAttacker(FLT_MAX)))
+				return;
+		}
+
+		// Don't bother taking damage from the physics attacker
+		if (pHitEntity && HasPhysicsAttacker(0.5f) == pHitEntity)
+			return;
+
+		if (m_takedamage != DAMAGE_NO)
+		{
+			int damageType = 0;
+			float damage = CalculateDefaultPhysicsDamage(index, pEvent, 1.0f, true, damageType);
+			if (damage > 0)
+			{
+				CBaseEntity* pHitEntity = pEvent->pEntities[!index];
+				if (!pHitEntity)
+				{
+					// hit world
+					pHitEntity = GetContainingEntity(INDEXENT(0));
+				}
+				Vector damagePos;
+				pEvent->pInternalData->GetContactPoint(damagePos);
+				Vector damageForce = pEvent->postVelocity[index] * pEvent->pObjects[index]->GetMass();
+				if (damageForce == vec3_origin)
+				{
+					// This can happen if this entity is motion disabled, and can't move.
+					// Use the velocity of the entity that hit us instead.
+					damageForce = pEvent->postVelocity[!index] * pEvent->pObjects[!index]->GetMass();
+				}
+
+				if (BloodColor() != BLOOD_COLOR_MECH)
+				{
+					IPhysicsObject* pObj = pEvent->pObjects[index];
+
+					Vector vecPos;
+					pObj->GetPosition(&vecPos, NULL);
+
+					trace_t tr;
+					UTIL_TraceLine(vecPos, vecPos + pEvent->preVelocity[0] * 1.5, MASK_SHOT, this, COLLISION_GROUP_NONE, &tr);
+
+					UTIL_BloodDecalTrace(&tr, BloodColor());
+				}
+
+				CTakeDamageInfo dmgInfo(pHitEntity, pHitEntity, damageForce, damagePos, damage, damageType);
+				CBasePlayer* pPlayer = HasPhysicsAttacker(5.0f);
+				if (!pPlayer)
+					pPlayer = pHitEntity->HasPhysicsAttacker(1.0f);
+
+				if (pPlayer)
+				{
+					dmgInfo.SetAttacker(pPlayer);
+				}
+
+				PhysCallbackDamage(this, dmgInfo, *pEvent, index);
+			}
+		}
+	}
+}
+
+void CBaseCombatCharacter::TraceAttack(const CTakeDamageInfo& info, const Vector& dir, trace_t* ptr)
+{
+	if (InRagdollMode() && ptr->physicsbone >= 0 && ptr->physicsbone < m_ragdoll.listCount)
+	{
+		VPhysicsSwapObject(m_ragdoll.list[ptr->physicsbone].pObject);
+	}
+
+	BaseClass::TraceAttack(info, dir, ptr);
+}
+
+bool CBaseCombatCharacter::TestCollision(const Ray_t& ray, unsigned int mask, trace_t& trace)
+{
+	if (!InRagdollMode())
+		return BaseClass::TestCollision(ray, mask, trace);
+
+	CStudioHdr* pStudioHdr = GetModelPtr();
+	if (!pStudioHdr)
+		return false;
+
+	// Just iterate all of the elements and trace the box against each one.
+	// NOTE: This is pretty expensive for small/dense characters
+	trace_t tr;
+	for (int i = 0; i < m_ragdoll.listCount; i++)
+	{
+		Vector position;
+		QAngle angles;
+
+		if (m_ragdoll.list[i].pObject)
+		{
+			m_ragdoll.list[i].pObject->GetPosition(&position, &angles);
+			physcollision->TraceBox(ray, m_ragdoll.list[i].pObject->GetCollide(), position, angles, &tr);
+
+			if (tr.fraction < trace.fraction)
+			{
+				tr.physicsbone = i;
+				tr.surface.surfaceProps = m_ragdoll.list[i].pObject->GetMaterialIndex();
+				trace = tr;
+			}
+		}
+		else
+		{
+			DevWarning("Bogus object in Ragdoll Prop's ragdoll list!\n");
+		}
+	}
+
+	if (trace.fraction >= 1)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void CBaseCombatCharacter::Teleport(const Vector* newPosition, const QAngle* newAngles, const Vector* newVelocity)
+{
+	if (!InRagdollMode())
+	{
+		BaseClass::Teleport(newPosition, newAngles, newVelocity);
+		return;
+	}
+
+	// newAngles is a relative transform for the entity
+	// But a ragdoll entity has identity orientation by design
+	// so we compute a relative transform here based on the previous transform
+	matrix3x4_t startMatrixInv;
+	MatrixInvert(EntityToWorldTransform(), startMatrixInv);
+	matrix3x4_t endMatrix;
+	MatrixCopy(EntityToWorldTransform(), endMatrix);
+	if (newAngles)
+	{
+		AngleMatrix(*newAngles, endMatrix);
+	}
+	if (newPosition)
+	{
+		PositionMatrix(*newPosition, endMatrix);
+	}
+	// now endMatrix is the refernce matrix for the entity at the target position
+	matrix3x4_t xform;
+	ConcatTransforms(endMatrix, startMatrixInv, xform);
+	// now xform is the relative transform the entity must undergo
+
+	// we need to call the base class and it will teleport our vphysics object, 
+	// so set object 0 up and compute the origin/angles for its new position (base implementation has side effects)
+	VPhysicsSwapObject(m_ragdoll.list[0].pObject);
+	matrix3x4_t obj0source, obj0Target;
+	m_ragdoll.list[0].pObject->GetPositionMatrix(&obj0source);
+	ConcatTransforms(xform, obj0source, obj0Target);
+	Vector obj0Pos;
+	QAngle obj0Angles;
+	MatrixAngles(obj0Target, obj0Angles, obj0Pos);
+	BaseClass::Teleport(&obj0Pos, &obj0Angles, newVelocity);
+
+	for (int i = 1; i < m_ragdoll.listCount; i++)
+	{
+		matrix3x4_t matrix, newMatrix;
+		m_ragdoll.list[i].pObject->GetPositionMatrix(&matrix);
+		ConcatTransforms(xform, matrix, newMatrix);
+		m_ragdoll.list[i].pObject->SetPositionMatrix(newMatrix, true);
+		UpdateRagdollNetworkDataFromVPhysics(m_ragdoll.list[i].pObject, i);
+	}
+	// fixup/relink object 0
+	UpdateRagdollNetworkDataFromVPhysics(m_ragdoll.list[0].pObject, 0);
+}
+
+void CBaseCombatCharacter::SetupBones(matrix3x4_t* pBoneToWorld, int boneMask)
+{
+	// no ragdoll, fall through to base class 
+	if (!InRagdollMode())
+	{
+		BaseClass::SetupBones(pBoneToWorld, boneMask);
+		return;
+	}
+
+	// Not really ideal, but it'll work for now
+	UpdateModelWidthScale();
+
+	MDLCACHE_CRITICAL_SECTION();
+	CStudioHdr* pStudioHdr = GetModelPtr();
+	bool sim[MAXSTUDIOBONES];
+	memset(sim, 0, pStudioHdr->numbones());
+
+	int i;
+
+	CBoneAccessor boneaccessor(pBoneToWorld);
+	for (i = 0; i < m_ragdoll.listCount; i++)
+	{
+		// during restore this may be NULL
+		if (!m_ragdoll.list[i].pObject)
+			continue;
+
+		if (RagdollGetBoneMatrix(m_ragdoll, boneaccessor, i))
+		{
+			sim[m_ragdoll.boneIndex[i]] = true;
+		}
+	}
+
+	mstudiobone_t* pbones = pStudioHdr->pBone(0);
+	for (i = 0; i < pStudioHdr->numbones(); i++)
+	{
+		if (sim[i])
+			continue;
+
+		if (!(pStudioHdr->boneFlags(i) & boneMask))
+			continue;
+
+		matrix3x4_t matBoneLocal;
+		AngleMatrix(pbones[i].rot, pbones[i].pos, matBoneLocal);
+		ConcatTransforms(pBoneToWorld[pbones[i].parent], matBoneLocal, pBoneToWorld[i]);
+	}
+}
+
+void CBaseCombatCharacter::OnSave(IEntitySaveUtils* pUtils)
+{
+	if (m_ragdoll.listCount)
+	{
+		// Don't save ragdoll element 0, base class saves the pointer in 
+		// m_pPhysicsObject
+		Assert(m_ragdoll.list[0].parentIndex == -1);
+		Assert(m_ragdoll.list[0].pConstraint == NULL);
+		Assert(m_ragdoll.list[0].originParentSpace == vec3_origin);
+		Assert(m_ragdoll.list[0].pObject != NULL);
+		VPhysicsSetObject(NULL);	// squelch a warning message
+		VPhysicsSetObject(m_ragdoll.list[0].pObject);	// make sure object zero is saved by CBaseEntity
+	}
+
+	BaseClass::OnSave(pUtils);
+}
+
+void CBaseCombatCharacter::OnRestore()
+{
+	// rebuild element 0 since it isn't saved
+	// NOTE: This breaks the rules - the pointer needs to get fixed in Restore()
+	m_ragdoll.list[0].pObject = VPhysicsGetObject();
+	m_ragdoll.list[0].parentIndex = -1;
+	m_ragdoll.list[0].originParentSpace.Init();
+
+	BaseClass::OnRestore();
+	if (!m_ragdoll.listCount)
+		return;
+
+	// JAY: Reset collision relationships
+	RagdollSetupCollisions(m_ragdoll, modelinfo->GetVCollide(GetModelIndex()), GetModelIndex());
+	VPhysicsUpdate(VPhysicsGetObject());
 }

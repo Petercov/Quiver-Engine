@@ -109,7 +109,35 @@ public:
 	int				m_iPowerups;
 	int				m_iPrevPowerups;
 #endif
+private:
+	// Incoming from network
+	Vector		m_ragPos[RAGDOLL_MAX_ELEMENTS];
+	QAngle		m_ragAngles[RAGDOLL_MAX_ELEMENTS];
 
+	CInterpolatedVarArray< Vector, RAGDOLL_MAX_ELEMENTS >	m_iv_ragPos;
+	CInterpolatedVarArray< QAngle, RAGDOLL_MAX_ELEMENTS >	m_iv_ragAngles;
+
+	int			m_elementCount;
+	int			m_boneIndex[RAGDOLL_MAX_ELEMENTS];
+	float		m_flLastBoneChangeTime;
+
+	bool		m_bRagdollEnabled;
+	bool		m_bOldRagdollEnabled;
+
+public:
+
+	virtual void			OnPreDataChanged(DataUpdateType_t updateType);
+	virtual void			OnDataChanged(DataUpdateType_t updateType);
+
+	virtual void PostDataUpdate(DataUpdateType_t updateType);
+
+	virtual int InternalDrawModel(int flags);
+	virtual CStudioHdr* OnNewModel(void);
+	virtual void GetRenderBounds(Vector& theMins, Vector& theMaxs);
+	virtual float LastBoneChangedTime();
+
+	virtual bool					IsServerRagdoll() { return m_bRagdollEnabled && m_elementCount; }
+	virtual void					SetupRagdollBones(CStudioHdr* hdr, bool* boneSimulated, CBoneAccessor& pBoneToWorld);
 };
 
 inline C_BaseCombatCharacter *ToBaseCombatCharacter( C_BaseEntity *pEntity )

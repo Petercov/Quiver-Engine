@@ -1614,7 +1614,7 @@ public:
 	bool							m_bEnableRenderingClipPlane; //true to use the custom clip plane when drawing
 	float *							GetRenderClipPlane( void ); // Rendering clip plane, should be 4 floats, return value of NULL indicates a disabled render clip plane
 
-protected:
+public:
 	bool m_bUseRagdollModelInstance = false;
 	ModelInstanceHandle_t m_RagdollModelInstance = MODEL_INSTANCE_INVALID;
 
