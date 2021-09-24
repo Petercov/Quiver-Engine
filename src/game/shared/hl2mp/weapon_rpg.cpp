@@ -129,11 +129,11 @@ BEGIN_DATADESC( CMissile )
 	DEFINE_FIELD( m_flDamage,				FIELD_FLOAT ),
 	
 	// Function Pointers
-	DEFINE_FUNCTION( MissileTouch ),
-	DEFINE_FUNCTION( AccelerateThink ),
-	DEFINE_FUNCTION( AugerThink ),
-	DEFINE_FUNCTION( IgniteThink ),
-	DEFINE_FUNCTION( SeekThink ),
+	DEFINE_ENTITYFUNC( MissileTouch ),
+	DEFINE_THINKFUNC( AccelerateThink ),
+	DEFINE_THINKFUNC( AugerThink ),
+	DEFINE_THINKFUNC( IgniteThink ),
+	DEFINE_THINKFUNC( SeekThink ),
 
 END_DATADESC()
 
@@ -869,7 +869,7 @@ BEGIN_DATADESC( CAPCMissile )
 	DEFINE_THINKFUNC( AugerStartThink ),
 	DEFINE_THINKFUNC( ExplodeThink ),
 
-	DEFINE_FUNCTION( APCMissileTouch ),
+	DEFINE_ENTITYFUNC( APCMissileTouch ),
 
 END_DATADESC()
 

@@ -19,6 +19,8 @@
 			game			    hl2mp/hl2mp_english.vpk
 			game			    hl2mp/hl2mp_pak.vpk
 			game				hl2mp
+			
+			game				sourcebase
             
 			game				hl2/hl2_sound_vo_english.vpk
 			game				hl2/hl2_pak.vpk
@@ -28,7 +30,6 @@
             
 			game				hl2
             
-			game				sourcebase            
 			core				core
 		}
 	}

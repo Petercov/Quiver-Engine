@@ -65,9 +65,9 @@ BEGIN_DATADESC( CFlare )
 	DEFINE_INPUTFUNC( FIELD_FLOAT, "Launch", InputLaunch),
 
 	// Function Pointers
-	DEFINE_FUNCTION( FlareTouch ),
-	DEFINE_FUNCTION( FlareBurnTouch ),
-	DEFINE_FUNCTION( FlareThink ),
+	DEFINE_ENTITYFUNC( FlareTouch ),
+	DEFINE_ENTITYFUNC( FlareBurnTouch ),
+	DEFINE_THINKFUNC( FlareThink ),
 
 END_DATADESC()
 

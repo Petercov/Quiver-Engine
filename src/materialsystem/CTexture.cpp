@@ -60,7 +60,7 @@
 
 #if defined(IS_WINDOWS_PC)
 static void ConVarChanged_mat_managedtextures(IConVar* var, const char* pOldValue, float flOldValue);
-static ConVar mat_managedtextures("mat_managedtextures", "0", FCVAR_ARCHIVE, "If set, allows Direct3D to manage texture uploading at the cost of extra system memory", &ConVarChanged_mat_managedtextures);
+static ConVar mat_managedtextures("mat_managedtextures", "1", FCVAR_ARCHIVE, "If set, allows Direct3D to manage texture uploading at the cost of extra system memory", &ConVarChanged_mat_managedtextures);
 static void ConVarChanged_mat_managedtextures(IConVar* var, const char* pOldValue, float flOldValue)
 {
 	if (mat_managedtextures.GetBool() != (flOldValue != 0))

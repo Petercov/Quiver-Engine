@@ -406,7 +406,7 @@ BEGIN_DATADESC( CBasePlayer )
 	DEFINE_FIELD( m_autoKickDisabled, FIELD_BOOLEAN ),
 
 	// Function Pointers
-	DEFINE_FUNCTION( PlayerDeathThink ),
+	DEFINE_THINKFUNC( PlayerDeathThink ),
 
 	// Inputs
 	DEFINE_INPUTFUNC( FIELD_INTEGER, "SetHealth", InputSetHealth ),

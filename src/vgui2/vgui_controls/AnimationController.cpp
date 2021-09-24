@@ -625,9 +625,11 @@ bool AnimationController::ParseScriptFile(char *pMem, int length)
 			
 			// Look ahead one token for a conditional
 			char *peek = ParseFile(pMem, token, NULL);
-			if ( Q_stristr( token, "[$" ) )
+			if (Q_stristr(token, "[$") || Q_stristr(token, "[!$"))
 			{
-				if ( !EvaluateConditional( token ) )
+				bool bCondition = false;
+				ExpressionHandler.Evaluate(bCondition, token);
+				if (!bCondition)
 				{
 					seq.cmdList.Remove( cmdIndex );
 				}
