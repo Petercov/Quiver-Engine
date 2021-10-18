@@ -1,0 +1,663 @@
+
+$PoseParameter "vehicle_weapon_yaw" -180 180 loop 0
+$PoseParameter "vehicle_weapon_pitch" -45 45 loop 0
+$PoseParameter "vehicle_steer" -1 1 loop 0
+$PoseParameter "vehicle_wheel_fl_height" -1 1 loop 0
+$PoseParameter "vehicle_wheel_fr_height" -1 1 loop 0
+$PoseParameter "vehicle_wheel_rl_height" -1 1 loop 0
+$PoseParameter "vehicle_wheel_rr_height" -1 1 loop 0
+$PoseParameter "vehicle_wheel_fl_spin" -180 180 loop 360
+$PoseParameter "vehicle_wheel_fr_spin" -180 180 loop 360
+$PoseParameter "vehicle_wheel_rl_spin" -180 180 loop 360
+$PoseParameter "vehicle_wheel_rr_spin" -180 180 loop 360
+
+$WeightList "weights_weapon_pitch" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 1
+	 "APC.Gun_Base" 1
+}
+
+$WeightList "weights_turning" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 1
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 1
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_fr_suspension" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 1
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_fr_spin" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 1
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_fl_suspension" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 1
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_fl_spin" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 1
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_rr_suspension" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 1
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_rr_spin" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 1
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_rl_suspension" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 1
+	 "APC.Wheel_RL_Rotate" 0
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$WeightList "weights_wheel_rl_spin" {
+	 "APC" 0
+	 "APC.Frame" 0
+	 "APC.Wheel_RL_Shock" 0
+	 "APC.Wheel_RL_Rotate" 1
+	 "APC.Wheel_FL_Shock" 0
+	 "APC.Wheel_FL_Turn" 0
+	 "APC.Wheel_FL_Rotate" 0
+	 "APC.Wheel_FR_Shock" 0
+	 "APC.Wheel_FR_Turn" 0
+	 "APC.Wheel_FR_Rotate" 0
+	 "APC.Wheel_RR_Shock" 0
+	 "APC.Wheel_RR_Rotate" 0
+	 "APC.piston" 0
+	 "APC.Gun_Base" 0
+}
+
+$Animation "aim_up_corrective_animation" "combine_apc_anims\aim_up_corrective_animation.smd" {
+}
+
+$Animation "aim_down_corrective_animation" "combine_apc_anims\aim_down_corrective_animation.smd" {
+}
+
+$Animation "aim_back_corrective_animation" "combine_apc_anims\aim_back_corrective_animation.smd" {
+}
+
+$Animation "aim_right_corrective_animation" "combine_apc_anims\aim_right_corrective_animation.smd" {
+}
+
+$Animation "aim_front_corrective_animation" "combine_apc_anims\aim_front_corrective_animation.smd" {
+}
+
+$Animation "aim_left_corrective_animation" "combine_apc_anims\aim_left_corrective_animation.smd" {
+}
+
+$Animation "turn_left_corrective_animation" "combine_apc_anims\turn_left_corrective_animation.smd" {
+}
+
+$Animation "turn_right_corrective_animation" "combine_apc_anims\turn_right_corrective_animation.smd" {
+}
+
+$Animation "wheel_fr_down_corrective_animation" "combine_apc_anims\wheel_fr_down_corrective_animation.smd" {
+}
+
+$Animation "wheel_fr_up_corrective_animation" "combine_apc_anims\wheel_fr_up_corrective_animation.smd" {
+}
+
+$Animation "wheel_fr_spin0_corrective_animation" "combine_apc_anims\wheel_fr_spin0_corrective_animation.smd" {
+}
+
+$Animation "wheel_fr_spin120_corrective_animation" "combine_apc_anims\wheel_fr_spin120_corrective_animation.smd" {
+}
+
+$Animation "wheel_fr_spin240_corrective_animation" "combine_apc_anims\wheel_fr_spin240_corrective_animation.smd" {
+}
+
+$Animation "wheel_fl_down_corrective_animation" "combine_apc_anims\wheel_fl_down_corrective_animation.smd" {
+}
+
+$Animation "wheel_fl_up_corrective_animation" "combine_apc_anims\wheel_fl_up_corrective_animation.smd" {
+}
+
+$Animation "wheel_fl_spin0_corrective_animation" "combine_apc_anims\wheel_fl_spin0_corrective_animation.smd" {
+}
+
+$Animation "wheel_fl_spin120_corrective_animation" "combine_apc_anims\wheel_fl_spin120_corrective_animation.smd" {
+}
+
+$Animation "wheel_fl_spin240_corrective_animation" "combine_apc_anims\wheel_fl_spin240_corrective_animation.smd" {
+}
+
+$Animation "wheel_rr_down_corrective_animation" "combine_apc_anims\wheel_rr_down_corrective_animation.smd" {
+}
+
+$Animation "wheel_rr_up_corrective_animation" "combine_apc_anims\wheel_rr_up_corrective_animation.smd" {
+}
+
+$Animation "wheel_rr_spin0_corrective_animation" "combine_apc_anims\wheel_rr_spin0_corrective_animation.smd" {
+}
+
+$Animation "wheel_rr_spin120_corrective_animation" "combine_apc_anims\wheel_rr_spin120_corrective_animation.smd" {
+}
+
+$Animation "wheel_rr_spin240_corrective_animation" "combine_apc_anims\wheel_rr_spin240_corrective_animation.smd" {
+}
+
+$Animation "wheel_rl_down_corrective_animation" "combine_apc_anims\wheel_rl_down_corrective_animation.smd" {
+}
+
+$Animation "wheel_rl_up_corrective_animation" "combine_apc_anims\wheel_rl_up_corrective_animation.smd" {
+}
+
+$Animation "wheel_rl_spin0_corrective_animation" "combine_apc_anims\wheel_rl_spin0_corrective_animation.smd" {
+}
+
+$Animation "wheel_rl_spin120_corrective_animation" "combine_apc_anims\wheel_rl_spin120_corrective_animation.smd" {
+}
+
+$Animation "wheel_rl_spin240_corrective_animation" "combine_apc_anims\wheel_rl_spin240_corrective_animation.smd" {
+}
+
+$Animation "neutral" "combine_apc_anims\neutral.smd" {
+	fps 30
+}
+
+$Animation "aim_neutral" "combine_apc_anims\aim_neutral.smd" {
+	fps 30
+}
+
+$Animation "aim_up" "combine_apc_anims\aim_up.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_up_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "aim_down" "combine_apc_anims\aim_down.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_down_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "aim_right" "combine_apc_anims\aim_right.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_right_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "aim_left" "combine_apc_anims\aim_left.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_left_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "aim_back" "combine_apc_anims\aim_back.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_back_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "aim_front" "combine_apc_anims\aim_front.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "aim_front_corrective_animation" 0
+	weightlist "weights_weapon_pitch"
+}
+
+$Animation "turn_left" "combine_apc_anims\turn_left.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "turn_left_corrective_animation" 0
+	weightlist "weights_turning"
+}
+
+$Animation "turn_right" "combine_apc_anims\turn_right.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "turn_right_corrective_animation" 0
+	weightlist "weights_turning"
+}
+
+$Animation "wheel_fr_down" "combine_apc_anims\wheel_fr_down.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fr_down_corrective_animation" 0
+	weightlist "weights_wheel_fr_suspension"
+}
+
+$Animation "wheel_fr_up" "combine_apc_anims\wheel_fr_up.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fr_up_corrective_animation" 0
+	weightlist "weights_wheel_fr_suspension"
+}
+
+$Animation "wheel_fr_spin0" "combine_apc_anims\wheel_fr_spin0.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fr_spin0_corrective_animation" 0
+	weightlist "weights_wheel_fr_spin"
+}
+
+$Animation "wheel_fr_spin120" "combine_apc_anims\wheel_fr_spin120.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fr_spin120_corrective_animation" 0
+	weightlist "weights_wheel_fr_spin"
+}
+
+$Animation "wheel_fr_spin240" "combine_apc_anims\wheel_fr_spin240.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fr_spin240_corrective_animation" 0
+	weightlist "weights_wheel_fr_spin"
+}
+
+$Animation "wheel_fl_down" "combine_apc_anims\wheel_fl_down.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fl_down_corrective_animation" 0
+	weightlist "weights_wheel_fl_suspension"
+}
+
+$Animation "wheel_fl_up" "combine_apc_anims\wheel_fl_up.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fl_up_corrective_animation" 0
+	weightlist "weights_wheel_fl_suspension"
+}
+
+$Animation "wheel_fl_spin0" "combine_apc_anims\wheel_fl_spin0.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fl_spin0_corrective_animation" 0
+	weightlist "weights_wheel_fl_spin"
+}
+
+$Animation "wheel_fl_spin120" "combine_apc_anims\wheel_fl_spin120.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fl_spin120_corrective_animation" 0
+	weightlist "weights_wheel_fl_spin"
+}
+
+$Animation "wheel_fl_spin240" "combine_apc_anims\wheel_fl_spin240.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_fl_spin240_corrective_animation" 0
+	weightlist "weights_wheel_fl_spin"
+}
+
+$Animation "wheel_rr_down" "combine_apc_anims\wheel_rr_down.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rr_down_corrective_animation" 0
+	weightlist "weights_wheel_rr_suspension"
+}
+
+$Animation "wheel_rr_up" "combine_apc_anims\wheel_rr_up.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rr_up_corrective_animation" 0
+	weightlist "weights_wheel_rr_suspension"
+}
+
+$Animation "wheel_rr_spin0" "combine_apc_anims\wheel_rr_spin0.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rr_spin0_corrective_animation" 0
+	weightlist "weights_wheel_rr_spin"
+}
+
+$Animation "wheel_rr_spin120" "combine_apc_anims\wheel_rr_spin120.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rr_spin120_corrective_animation" 0
+	weightlist "weights_wheel_rr_spin"
+}
+
+$Animation "wheel_rr_spin240" "combine_apc_anims\wheel_rr_spin240.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rr_spin240_corrective_animation" 0
+	weightlist "weights_wheel_rr_spin"
+}
+
+$Animation "wheel_rl_down" "combine_apc_anims\wheel_rl_down.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rl_down_corrective_animation" 0
+	weightlist "weights_wheel_rl_suspension"
+}
+
+$Animation "wheel_rl_up" "combine_apc_anims\wheel_rl_up.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rl_up_corrective_animation" 0
+	weightlist "weights_wheel_rl_suspension"
+}
+
+$Animation "wheel_rl_spin0" "combine_apc_anims\wheel_rl_spin0.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rl_spin0_corrective_animation" 0
+	weightlist "weights_wheel_rl_spin"
+}
+
+$Animation "wheel_rl_spin120" "combine_apc_anims\wheel_rl_spin120.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rl_spin120_corrective_animation" 0
+	weightlist "weights_wheel_rl_spin"
+}
+
+$Animation "wheel_rl_spin240" "combine_apc_anims\wheel_rl_spin240.smd" {
+	fps 30
+	// Crowbar writes this subtract option to prevent jigglebone and poseparameter problems when delta sequences are recompiled.
+	subtract "wheel_rl_spin240_corrective_animation" 0
+	weightlist "weights_wheel_rl_spin"
+}
+
+$Sequence "idle" {
+	"combine_apc_anims\idle.smd"
+	activity "ACT_IDLE" 1
+	fadein 0.2
+	fadeout 0.2
+	fps 30
+}
+
+$Sequence "aim" {
+	"combine_apc_anims\aim.smd"
+	fadein 0.2
+	fadeout 0.2
+	hidden
+	fps 30
+}
+
+$Sequence "spin" {
+	"combine_apc_anims\spin.smd"
+	fadein 0.2
+	fadeout 0.2
+	hidden
+	fps 30
+}
+
+$Sequence "suspension" {
+	"combine_apc_anims\suspension.smd"
+	fadein 0.2
+	fadeout 0.2
+	hidden
+	fps 30
+}
+
+$Sequence "turn" {
+	"combine_apc_anims\turn.smd"
+	fadein 0.2
+	fadeout 0.2
+	hidden
+	fps 30
+}
+
+$Sequence "attack1" {
+	"combine_apc_anims\attack1.smd"
+	activity "ACT_RANGE_ATTACK1" 1
+	{ event 5003 0 "2" }
+	{ event 3002 0 "" }
+	fadein 0.2
+	fadeout 0.2
+	fps 20
+}
+
+$Sequence "weapon_pitch" {
+	"aim_up"
+	"aim_down"
+	autoplay
+	blend "vehicle_weapon_pitch" -45 45
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "weapon_yaw" {
+	"aim_back"
+	"aim_right"
+	"aim_front"
+	"aim_left"
+	"aim_back"
+	autoplay
+	blend "vehicle_weapon_yaw" -180 180
+	blendwidth 5
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "turning" {
+	"turn_left"
+	"turn_right"
+	autoplay
+	blend "vehicle_steer" -1 1
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_fr_suspension" {
+	"wheel_fr_down"
+	"wheel_fr_up"
+	autoplay
+	blend "vehicle_wheel_fr_height" -1 1
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_fr_spin" {
+	"wheel_fr_spin0"
+	"wheel_fr_spin120"
+	"wheel_fr_spin240"
+	"wheel_fr_spin0"
+	autoplay
+	blend "vehicle_wheel_fr_spin" -180 180
+	blendwidth 4
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_fl_suspension" {
+	"wheel_fl_down"
+	"wheel_fl_up"
+	autoplay
+	blend "vehicle_wheel_fl_height" -1 1
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_fl_spin" {
+	"wheel_fl_spin0"
+	"wheel_fl_spin120"
+	"wheel_fl_spin240"
+	"wheel_fl_spin0"
+	autoplay
+	blend "vehicle_wheel_fl_spin" -180 180
+	blendwidth 4
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_rr_suspension" {
+	"wheel_rr_down"
+	"wheel_rr_up"
+	autoplay
+	blend "vehicle_wheel_rr_height" -1 1
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_rr_spin" {
+	"wheel_rr_spin0"
+	"wheel_rr_spin120"
+	"wheel_rr_spin240"
+	"wheel_rr_spin0"
+	autoplay
+	blend "vehicle_wheel_rr_spin" -180 180
+	blendwidth 4
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_rl_suspension" {
+	"wheel_rl_down"
+	"wheel_rl_up"
+	autoplay
+	blend "vehicle_wheel_rl_height" -1 1
+	blendwidth 2
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}
+
+$Sequence "wheel_rl_spin" {
+	"wheel_rl_spin0"
+	"wheel_rl_spin120"
+	"wheel_rl_spin240"
+	"wheel_rl_spin0"
+	autoplay
+	blend "vehicle_wheel_rl_spin" -180 180
+	blendwidth 4
+	delta
+	fadein 0.2
+	fadeout 0.2
+	hidden
+}

@@ -1,0 +1,21 @@
+
+$LOD 35
+{
+	replacemodel "APC_reference.smd" "APC_reference_lod1.smd"
+	NoFacial
+}
+$LOD 50
+{
+	replacemodel "APC_reference.smd" "APC_reference_lod2.smd"
+	NoFacial
+}
+$LOD 80
+{
+	replacemodel "APC_reference.smd" "APC_reference_lod3.smd"
+	NoFacial
+}
+$ShadowLOD
+{
+	replacemodel "APC_reference.smd" "APC_reference_lod4.smd"
+	NoFacial
+}

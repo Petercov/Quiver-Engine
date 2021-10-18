@@ -1,0 +1,126 @@
+
+$Weightlist weights_apcride_nolegs "valvebiped.Bip01_Spine1" 1.0 "ValveBiped.Bip01_Pelvis" 0.0
+
+$weightlist "weights_apcride_hand_r" {
+	 "ValveBiped.Bip01_Pelvis" 0
+	 "ValveBiped.Bip01_R_Thigh" 0
+	 "ValveBiped.Bip01_L_Thigh" 0
+	 "ValveBiped.Bip01_R_Finger0" 1
+	 "ValveBiped.Bip01_R_Finger1" 1
+	 "ValveBiped.Bip01_R_Finger2" 1
+	 "ValveBiped.Bip01_R_Finger3" 1
+	 "ValveBiped.Bip01_R_Finger4" 1
+}
+
+$sequence "apcride_R_Hand_Layer" {
+	"police_animations_anims\a_walkN_hold_pistol.smd"
+	frame 0 0
+	//numframes 30
+	weightlist "weights_apcride_hand_r"
+	loop
+	hidden
+}
+
+$animation a_apcride_R_gmod_pistol "APCRide_anims\gmod_attack_pistol" subtract a_apcride_R_gmod_pistol 0 weightlist weights_apcride_nolegs
+$sequence apcride_R_gun_fire_layer {
+	a_apcride_R_gmod_pistol
+	iklock lhand 1 0
+	delta
+	hidden
+	fps 45
+}
+
+$animation a_apcride_R_Aim_all_neutral "APCRide_anims\apc_idle_aim" frame 0 0
+$animation a_apcride_R_Aim_all_down_left "APCRide_anims\apc_idle_aim" frame 8 8 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_down_center "APCRide_anims\apc_idle_aim" frame 2 2 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_down_right "APCRide_anims\apc_idle_aim" frame 3 3 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_mid_left "APCRide_anims\apc_idle_aim" frame 6 6 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_mid_center "APCRide_anims\apc_idle_aim" frame 0 0 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_mid_right "APCRide_anims\apc_idle_aim" frame 4 4 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_up_left "APCRide_anims\apc_idle_aim" frame 7 7 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_up_center "APCRide_anims\apc_idle_aim" frame 1 1 subtract a_apcride_R_Aim_all_neutral 0
+$animation a_apcride_R_Aim_all_up_right "APCRide_anims\apc_idle_aim" frame 5 5 subtract a_apcride_R_Aim_all_neutral 0
+$sequence apcride_R_Aim_all {
+	a_apcride_R_Aim_all_up_right a_apcride_R_Aim_all_up_center a_apcride_R_Aim_all_up_left
+	a_apcride_R_Aim_all_mid_right a_apcride_R_Aim_all_mid_center a_apcride_R_Aim_all_mid_left
+	a_apcride_R_Aim_all_down_right a_apcride_R_Aim_all_down_center a_apcride_R_Aim_all_down_left
+	blend "aim_yaw" -70 80
+	blend "aim_pitch" -80 70
+	blendwidth 3
+	blendref a_apcride_R_Aim_all_neutral
+	blendcenter a_apcride_R_Aim_all_mid_center
+	calcblend aim_yaw "anim_attachment_RH" ZR
+	calcblend aim_pitch "anim_attachment_RH" YR
+	delta
+	hidden
+	iklock lhand 1 0.5
+}
+
+$animation a_apcride_R_lean_all_neutral "APCRide_anims\police_apc_leaning" frame 0 0
+$animation a_apcride_R_lean_all_right "APCRide_anims\police_apc_leaning" frame 1 1 subtract a_apcride_R_lean_all_neutral 0
+$animation a_apcride_R_lean_all_center "APCRide_anims\police_apc_leaning" frame 0 0 subtract a_apcride_R_lean_all_neutral 0
+$animation a_apcride_R_lean_all_left "APCRide_anims\police_apc_leaning" frame 2 2 subtract a_apcride_R_lean_all_neutral 0
+$sequence apcride_R_lean_all {
+	a_apcride_R_lean_all_right a_apcride_R_lean_all_center a_apcride_R_lean_all_left
+	blend "vehicle_lean" -1 1
+	blendref a_apcride_R_lean_all_neutral
+	blendcenter a_apcride_R_lean_all_center
+	blendwidth 3
+	delta
+	hidden
+	iklock lhand 1 0
+}
+
+$animation a_apcride_R_jump_land_ref "police_animations_anims\jump_holding_land"
+
+$sequence apcride_R_idle {
+	"APCRide_anims\RideApcIdle"
+	fps 24
+	activity ACT_PASSENGER_IDLE 1
+	node apcride_R
+	addlayer apcride_R_lean_all
+	addlayer apcride_R_Hand_Layer
+}
+
+$sequence apcride_R_exit1 {
+	"APCRide_anims\police_dismount_apc"
+	fps 30
+	{ event 6008 15 "" }
+	ikrule "lfoot" footstep contact 15 range 13 15 43 43
+	ikrule "rfoot" footstep contact 15 range 13 15 43 43
+	
+	alignto "apcride_R_idle"
+	walkframe 15 LY
+	walkalignto 40 "a_apcride_R_jump_land_ref" LX LY
+}
+
+$sequence apcride_R_enter1 {
+	"APCRide_anims\police_apc_mount"
+	fps 30
+	
+	align "a_apcride_R_jump_land_ref" X Y Z XR YR ZR 28 0
+	walkalignto 50 "apcride_R_idle" LX LY LZR
+	blendlayer "apcride_R_Hand_Layer" 30 36 50 50 spline xfade
+	ikrule "lfoot" footstep contact 1 range 0 0 15 18
+	ikrule "rfoot" footstep contact 0 range 0 0 1 3
+	ikrule "rfoot" footstep contact 11 range 8 10 16 18
+}
+
+$sequence apcride_R_gun_idle {
+	a_apcride_R_Aim_all_neutral
+	activity ACT_PASSENGER_IDLE_AIM 1
+	addlayer apcride_R_Aim_all
+	addlayer apcride_R_Hand_Layer
+	node apcride_R_shooting
+}
+
+$sequence apcride_R_gun_fire {
+	"APCRide_anims\apc_idle_aim"
+	frame 0 0
+	activity ACT_PASSENGER_RANGE_ATTACK1 1
+	addlayer apcride_R_Aim_all
+	addlayer apcride_R_Hand_Layer
+	blendlayer "apcride_R_gun_fire_layer" 0 1 30 31 spline
+	node apcride_R_shooting
+	numframes 31
+}
