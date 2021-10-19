@@ -528,6 +528,21 @@ public:
 
 	virtual int			UpdateTransmitState();
 
+	virtual CBasePlayer* GetBestPlayer() const;
+
+	virtual void			UpdateTeam();
+
+	virtual bool		IsVitalAlly();
+
+	//---------------------------------
+	// Death Notice
+	//
+
+	// Print death notices involving this npc?
+	virtual bool		ShowInDeathnotice() { return IsVitalAlly(); }
+
+	virtual const char* GetDeathNoticeNameOverride() { return NULL; }
+
 	//---------------------------------
 	// Component creation factories
 	// 

@@ -11443,6 +11443,24 @@ int CAI_BaseNPC::UpdateTransmitState()
 	return BaseClass::UpdateTransmitState();
 }
 
+CBasePlayer* CAI_BaseNPC::GetBestPlayer() const
+{
+	return AI_GetSinglePlayer();
+}
+
+void CAI_BaseNPC::UpdateTeam()
+{
+}
+
+bool CAI_BaseNPC::IsVitalAlly()
+{
+	return (Classify() == CLASS_PLAYER_ALLY_VITAL
+#ifdef HLSS_HE_GAME
+		|| Classify() == CLASS_COMBINE_VITAL
+#endif // HLSS_HE_GAME
+		);
+}
+
 //-----------------------------------------------------------------------------
 
 bool CAI_BaseNPC::CreateComponents()

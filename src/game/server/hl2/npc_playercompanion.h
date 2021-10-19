@@ -16,10 +16,19 @@
 #include "ai_behavior_lead.h"
 #include "ai_behavior_actbusy.h"
 #include "ai_behavior_fear.h"
+#include "ai_squadslot.h"
+
+#ifdef HLSS_HE_GAME
+#include "Human_Error\hlss_minershat.h"
+#endif
 
 #ifdef HL2_EPISODIC
 #include "ai_behavior_operator.h"
 #include "ai_behavior_passenger_companion.h"
+#endif
+
+#ifdef MAPBASE
+#include "mapbase/ai_grenade.h"
 #endif
 
 #if defined( _WIN32 )
@@ -85,17 +94,29 @@ public:
 
 class CPhysicsProp;
 
+#ifdef MAPBASE
+// If you think about it, this is really unnecessary.
+//#define COMPANION_MELEE_ATTACK 1
+#endif
+
 //-----------------------------------------------------------------------------
 //
 // CLASS: CNPC_PlayerCompanion
 //
 //-----------------------------------------------------------------------------
-
+#ifdef MAPBASE
+class CNPC_PlayerCompanion : public CAI_GrenadeUser<CAI_PlayerAlly>
+{
+	DECLARE_CLASS( CNPC_PlayerCompanion, CAI_GrenadeUser<CAI_PlayerAlly> );
+#else
 class CNPC_PlayerCompanion : public CAI_PlayerAlly
 {
 	DECLARE_CLASS( CNPC_PlayerCompanion, CAI_PlayerAlly );
-
+#endif
 public:
+
+	CNPC_PlayerCompanion();
+
 	//---------------------------------
 	bool			CreateBehaviors();
 	void			Precache();
@@ -109,7 +130,8 @@ public:
 	int 			ObjectCaps();
 	bool 			ShouldAlwaysThink();
 
-	Disposition_t	IRelationType( CBaseEntity *pTarget );
+	virtual Disposition_t	IRelationType( CBaseEntity *pTarget );
+	virtual int				IRelationPriority(CBaseEntity* pTarget);
 	
 	bool			IsSilentSquadMember() const;
 
@@ -190,6 +212,10 @@ public:
 	virtual			void ReadinessLevelChanged( int iPriorLevel ) { 	}
 
 	void			InputGiveWeapon( inputdata_t &inputdata );
+#ifdef HLSS_HE_GAME
+	void			InputGiveHat(inputdata_t& inputdata);
+	void			InputTakeHat(inputdata_t& inputdata);
+#endif
 
 #ifdef HL2_EPISODIC
 	//---------------------------------
@@ -217,6 +243,14 @@ public:
 public:
 
 	virtual void	OnPlayerKilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info );
+#ifdef MAPBASE
+	// This is just here to overwrite ai_playerally's TLK_ENEMY_DEAD
+	virtual void	OnKilledNPC(CBaseCombatCharacter *pKilled) {}
+
+	virtual void	Event_Killed( const CTakeDamageInfo &info );
+	virtual void	Event_KilledOther( CBaseEntity *pVictim, const CTakeDamageInfo &info );
+	virtual void	DoCustomCombatAI( void );
+#endif
 
 	//---------------------------------
 	//---------------------------------
@@ -256,6 +290,11 @@ public:
 	bool			Weapon_CanUse( CBaseCombatWeapon *pWeapon );
 	void			Weapon_Equip( CBaseCombatWeapon *pWeapon );
 	void			PickupWeapon( CBaseCombatWeapon *pWeapon );
+	
+#if COMPANION_MELEE_ATTACK
+	bool			KeyValue( const char *szKeyName, const char *szValue );
+	int				MeleeAttack1Conditions( float flDot, float flDist );
+#endif
 	
 	bool 			FindCoverPos( CBaseEntity *pEntity, Vector *pResult);
 	bool			FindCoverPosInRadius( CBaseEntity *pEntity, const Vector &goalPos, float coverRadius, Vector *pResult );
@@ -308,6 +347,21 @@ public:
 
 	bool			AllowReadinessValueChange( void );
 
+#ifdef MAPBASE
+	virtual bool IsAltFireCapable() { return (m_iGrenadeCapabilities & GRENCAP_ALTFIRE) != 0 && BaseClass::IsAltFireCapable(); }
+	virtual bool IsGrenadeCapable() { return (m_iGrenadeCapabilities & GRENCAP_GRENADE) != 0; }
+
+	virtual bool	ShouldDropGrenades() { return (m_iGrenadeDropCapabilities & GRENDROPCAP_GRENADE) != 0 && BaseClass::ShouldDropGrenades(); }
+	virtual bool	ShouldDropInterruptedGrenades() { return (m_iGrenadeDropCapabilities & GRENDROPCAP_INTERRUPTED) != 0 && BaseClass::ShouldDropInterruptedGrenades(); }
+	virtual bool	ShouldDropAltFire() { return (m_iGrenadeDropCapabilities & GRENDROPCAP_ALTFIRE) != 0 && BaseClass::ShouldDropAltFire(); }
+
+private:
+
+	// Determines whether this NPC is allowed to use grenades or alt-fire stuff.
+	eGrenadeCapabilities m_iGrenadeCapabilities;
+	eGrenadeDropCapabilities m_iGrenadeDropCapabilities;
+#endif
+
 protected:
 	//-----------------------------------------------------
 	// Conditions, Schedules, Tasks
@@ -326,11 +380,40 @@ protected:
 		SCHED_PC_FAIL_TAKE_COVER_TURRET,
 		SCHED_PC_FAKEOUT_MORTAR,
 		SCHED_PC_GET_OFF_COMPANION,
+#ifdef COMPANION_MELEE_ATTACK
+		SCHED_PC_MELEE_AND_MOVE_AWAY,
+#endif
+		SCHED_PC_RANGE_ATTACK1_RPG,
+		SCHED_PC_STRIDER_RANGE_ATTACK1_RPG,
+#ifdef MAPBASE
+		SCHED_PC_AR2_ALTFIRE,
+		SCHED_PC_MOVE_TO_FORCED_GREN_LOS,
+		SCHED_PC_FORCED_GRENADE_THROW,
+		SCHED_PC_RANGE_ATTACK2,		// Grenade throw
+#endif
 		NEXT_SCHEDULE,
 
 		TASK_PC_WAITOUT_MORTAR = BaseClass::NEXT_TASK,
 		TASK_PC_GET_PATH_OFF_COMPANION,
+		TASK_PC_RPG_AUGER,
+#ifdef MAPBASE
+		TASK_PC_PLAY_SEQUENCE_FACE_ALTFIRE_TARGET,
+		TASK_PC_GET_PATH_TO_FORCED_GREN_LOS,
+		TASK_PC_DEFER_SQUAD_GRENADES,
+		TASK_PC_FACE_TOSS_DIR,
+#endif
 		NEXT_TASK,
+	};
+
+	enum
+	{
+		SQUAD_SLOT_PC_RPG1 = LAST_SHARED_SQUADSLOT,
+		SQUAD_SLOT_PC_RPG2,
+#ifdef MAPBASE
+		SQUAD_SLOT_GRENADE1,
+		SQUAD_SLOT_GRENADE2,
+#endif MAPBASE
+		NEXT_SQUADSLOT
 	};
 
 private:
@@ -356,7 +439,20 @@ private:
 
 	// Derived classes should not use the expresser directly
 	virtual CAI_Expresser *GetExpresser()	{ return BaseClass::GetExpresser(); }
+#ifdef HLSS_HE_GAME
+	public:
+		bool						m_bMinersHat;
+		CHandle<CHLSS_MinersHat>	m_hMinersHat;
 
+		void					AddHat();
+		void					RemoveHat();
+
+		//virtual void			OnRestore();
+		virtual void			UpdateOnRemove();
+#ifndef MAPBASE
+		virtual void			Event_Killed(const CTakeDamageInfo& info);
+#endif
+#endif
 protected:
 	//-----------------------------------------------------
 
@@ -375,6 +471,8 @@ protected:
 	//-----------------------------------------------------
 
 	bool	ShouldAlwaysTransition( void );
+
+	bool			m_bRPGAvoidPlayer;
 
 	// Readiness is a value that's fed by various events in the NPC's AI. It is used
 	// to make decisions about what type of posture the NPC should be in (relaxed, agitated).
@@ -406,11 +504,21 @@ protected:
 
 	//-----------------------------------------------------
 
+#ifdef MAPBASE
+	static string_t gm_iszMortarClassname;
+	#define gm_iszFloorTurretClassname gm_isz_class_FloorTurret
+	static string_t gm_iszGroundTurretClassname;
+	#define gm_iszShotgunClassname gm_isz_class_Shotgun
+	#define gm_iszRollerMineClassname gm_isz_class_Rollermine
+	#define gm_iszSMG1Classname gm_isz_class_SMG1
+	#define gm_iszAR2Classname gm_isz_class_AR2
+#else
 	static string_t gm_iszMortarClassname;
 	static string_t gm_iszFloorTurretClassname;
 	static string_t gm_iszGroundTurretClassname;
 	static string_t gm_iszShotgunClassname;
 	static string_t	gm_iszRollerMineClassname;
+#endif
 
 	//-----------------------------------------------------
 
@@ -424,15 +532,33 @@ protected:
 
 	COutputEvent	m_OnWeaponPickup;
 
+#if COMPANION_MELEE_ATTACK
+	int		m_nMeleeDamage;
+#endif
+
 	CStopwatch		m_SpeechWatch_PlayerLooking;
 
 	DECLARE_DATADESC();
 	DEFINE_CUSTOM_AI;
 };
 
+enum OverrideMoveType_e
+{
+	MOVE_INVALID = -1,
+
+	MOVE_ENVFIRE = 0,
+	MOVE_COMBINEMINE,
+	MOVE_FLOORTURRET,
+	MOVE_BURNINGENT,
+#ifdef HL2_LAZUL
+	MOVE_SMOKEGRENADE,
+#endif
+	NUM_OVERRIDE_MOVE_CLASSNAMES
+};
+
 // Used for quick override move searches against certain types of entities
 void OverrideMoveCache_ForceRepopulateList( void );
-CBaseEntity *OverrideMoveCache_FindTargetsInRadius( CBaseEntity *pFirstEntity, const Vector &vecOrigin, float flRadius );
+CBaseEntity *OverrideMoveCache_FindTargetsInRadius( CBaseEntity *pFirstEntity, const Vector &vecOrigin, float flRadius, OverrideMoveType_e *pEntType = nullptr);
 void OverrideMoveCache_LevelInitPreEntity( void );
 void OverrideMoveCache_LevelShutdownPostEntity( void );
 
