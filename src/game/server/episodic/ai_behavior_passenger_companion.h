@@ -80,7 +80,7 @@ public:
 	};
 
 	virtual bool	CanSelectSchedule( void );
-	virtual void	Enable( CPropJeepEpisodic *pVehicle, bool bImmediateEnter = false);
+	virtual void	Enable(CPropVehicleDriveable *pVehicle, bool bImmediateEnter = false);
 	virtual void	GatherConditions( void );
 	virtual int		SelectSchedule( void );
 	virtual int		SelectFailSchedule( int failedSchedule, int failedTask, AI_TaskFailureCode_t taskFailCode );

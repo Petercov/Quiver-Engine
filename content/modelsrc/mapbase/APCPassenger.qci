@@ -76,7 +76,7 @@ $animation a_apcride_R_jump_land_ref "police_animations_anims\jump_holding_land"
 $sequence apcride_R_idle {
 	"APCRide_anims\RideApcIdle"
 	fps 24
-	activity ACT_PASSENGER_IDLE 1
+	activity ACT_APC_PASSENGER_IDLE 1
 	node apcride_R
 	addlayer apcride_R_lean_all
 	addlayer apcride_R_Hand_Layer
@@ -108,7 +108,7 @@ $sequence apcride_R_enter1 {
 
 $sequence apcride_R_gun_idle {
 	a_apcride_R_Aim_all_neutral
-	activity ACT_PASSENGER_IDLE_AIM 1
+	activity ACT_APC_PASSENGER_IDLE_AIM 1
 	addlayer apcride_R_Aim_all
 	addlayer apcride_R_Hand_Layer
 	node apcride_R_shooting
@@ -117,7 +117,7 @@ $sequence apcride_R_gun_idle {
 $sequence apcride_R_gun_fire {
 	"APCRide_anims\apc_idle_aim"
 	frame 0 0
-	activity ACT_PASSENGER_RANGE_ATTACK1 1
+	activity ACT_APC_PASSENGER_RANGE_ATTACK1 1
 	addlayer apcride_R_Aim_all
 	addlayer apcride_R_Hand_Layer
 	blendlayer "apcride_R_gun_fire_layer" 0 1 30 31 spline

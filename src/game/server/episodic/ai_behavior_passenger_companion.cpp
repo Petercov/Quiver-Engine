@@ -19,6 +19,7 @@
 #include "cplane.h"
 #include "util_shared.h"
 #include "sceneentity.h"
+#include "vehicle_jeep_episodic.h"
 
 bool SphereWithinPlayerFOV( CBasePlayer *pPlayer, const Vector &vecCenter, float flRadius );
 
@@ -92,28 +93,28 @@ m_flNextJostleTime( 0.0f )
 	m_VehicleMonitor.ClearMark();
 }
 
-void CAI_PassengerBehaviorCompanion::Enable( CPropJeepEpisodic *pVehicle, bool bImmediateEnter /*= false*/ )
+void CAI_PassengerBehaviorCompanion::Enable(CPropVehicleDriveable* pVehicle, bool bImmediateEnter /*= false*/)
 {
-	BaseClass::Enable( pVehicle );
+	BaseClass::Enable(pVehicle);
 
 	// Store this up for quick reference later on
-	m_hCompanion = dynamic_cast<CNPC_PlayerCompanion *>(GetOuter());
+	m_hCompanion = dynamic_cast<CNPC_PlayerCompanion*>(GetOuter());
 
 	// See if we want to sit in the vehicle immediately
-	if ( bImmediateEnter )
+	if (bImmediateEnter)
 	{
 		// Find the seat and sit in it
-		if ( ReserveEntryPoint( VEHICLE_SEAT_ANY ) )
+		if (ReserveEntryPoint(VEHICLE_SEAT_ANY))
 		{
 			// Attach
 			AttachToVehicle();
 
 			// This will slam us into the right position and clean up
 			FinishEnterVehicle();
-			GetOuter()->AddEffects( EF_NOINTERP );
+			GetOuter()->AddEffects(EF_NOINTERP);
 
 			// Start our schedule immediately
-			ClearSchedule( "Immediate entry to vehicle" );
+			ClearSchedule("Immediate entry to vehicle");
 		}
 	}
 }

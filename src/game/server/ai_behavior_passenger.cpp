@@ -73,7 +73,7 @@ m_nTransitionSequence( -1 )
 //-----------------------------------------------------------------------------
 // Purpose: Enables the behavior to run
 //-----------------------------------------------------------------------------
-void CAI_PassengerBehavior::Enable( CPropJeepEpisodic *pVehicle, bool bImmediateEnter /*= false*/ ) 
+void CAI_PassengerBehavior::Enable(CPropVehicleDriveable *pVehicle, bool bImmediateEnter /*= false*/ )
 { 
 	if ( m_bEnabled && m_hVehicle.Get() )
 		return;

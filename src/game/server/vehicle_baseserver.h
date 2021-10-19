@@ -88,7 +88,7 @@ private:
 class CPassengerSeat
 {
 public:
-	CPassengerSeat( void ) : m_nAttachmentID( -1 ) {};
+	CPassengerSeat( void ) : m_nAttachmentID( -1 ), m_ActRemap(DefLessFunc(int)) {};
 	int GetAttachmentID( void ) const { return m_nAttachmentID; }
 
 private:
@@ -96,6 +96,8 @@ private:
 	int										m_nAttachmentID;		// Goal attachment
 	CUtlVector<CPassengerSeatTransition>	m_EntryTransitions;		// Entry information
 	CUtlVector<CPassengerSeatTransition>	m_ExitTransitions;		// Exit information
+	CUtlMap<int, int>						m_ActRemap;
+	int										m_RequiredActivity;
 
 	friend class CBaseServerVehicle;
 };
@@ -205,6 +207,7 @@ public:
 
 
 	virtual const PassengerSeatAnims_t	*NPC_GetPassengerSeatAnims( CBaseCombatCharacter *pPassenger, PassengerSeatAnimType_t nType );
+	virtual const PassengerSeatActRemap_t* NPC_GetPassengerSeatActivties(CBaseCombatCharacter* pPassenger);
 	virtual CBaseCombatCharacter		*NPC_GetPassengerInSeat( int nRoleID, int nSeatID );
 
 	Vector	GetSavedViewOffset( void ) { return m_savedViewOffset; }
