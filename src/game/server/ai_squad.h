@@ -94,6 +94,7 @@ public:
 	CAI_BaseNPC *			GetFirstMember( AISquadIter_t *pIter = NULL, bool bIgnoreSilentMembers = true );
 	CAI_BaseNPC *			GetNextMember( AISquadIter_t *pIter, bool bIgnoreSilentMembers = true );
 	CAI_BaseNPC *			GetAnyMember();
+	CAI_BaseNPC* GetMember(int iIndex, bool bIgnoreSilentMembers = true);
 	int						NumMembers( bool bIgnoreSilentMembers = true );
 	int						GetSquadIndex( CAI_BaseNPC * );
 
@@ -146,6 +147,9 @@ public:
 		}
 	}
 
+	void					SetPlayerCommander(CBasePlayer* pPlayer) { m_hPlayerCommander.Set(pPlayer); }
+	CBasePlayer* GetPlayerCommander() { return m_hPlayerCommander.Get(); }
+
 
 private:
 	void OccupySlot( CBaseEntity *pEnemy, int i );
@@ -191,6 +195,8 @@ private:
 	CVarBitVec	m_squadSlotsUsed;							// What squad slots are filled?
 
 #endif
+
+	CHandle<CBasePlayer>							m_hPlayerCommander;
 
 	//---------------------------------
 public:

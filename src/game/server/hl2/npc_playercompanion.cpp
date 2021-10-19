@@ -2133,13 +2133,18 @@ void CNPC_PlayerCompanion::ModifyOrAppendCriteria( AI_CriteriaSet& set )
 
 	if (GetSquad())
 	{
+#ifdef NEW_RESPONSE_SYSTEM
 		set.AppendCriteria("squadsize", GetSquad()->NumMembers());
 		set.AppendCriteria("isleader", GetSquad()->IsLeader(this) ? 1.0f : 0.f);
+#else
+		set.AppendCriteria("squadsize", UTIL_VarArgs("%d", GetSquad()->NumMembers()));
+		set.AppendCriteria("isleader", GetSquad()->IsLeader(this) ? "1" : "0");
+#endif
 	}
 	else
 	{
-		set.AppendCriteria("squadsize", 1.0f);
-		set.AppendCriteria("isleader", 0.0f);
+		set.AppendCriteria("squadsize", "1");
+		set.AppendCriteria("isleader", "0");
 	}
 
 	if (m_FollowBehavior.GetFollowTarget() && m_FollowBehavior.GetFollowTarget()->IsPlayer())

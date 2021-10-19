@@ -80,6 +80,7 @@ enum Capability_t
 
 class CBaseCombatWeapon;
 
+#define BCC_DEFAULT_LOOK_TOWARDS_TOLERANCE 0.9f
 
 enum Disposition_t 
 {
@@ -171,6 +172,39 @@ public:
 	virtual Vector		EyeDirection3D( void ) 	{ return HeadDirection3D( );  }; // No eye motion so just return head dir
 
 	virtual void SetTransmit( CCheckTransmitInfo *pInfo, bool bAlways );
+
+	// -----------------------
+	// Fog
+	// -----------------------
+	virtual bool		IsHiddenByFog(const Vector& target) const;	///< return true if given target cant be seen because of fog
+	virtual bool		IsHiddenByFog(CBaseEntity* target) const;		///< return true if given target cant be seen because of fog
+	virtual bool		IsHiddenByFog(float range) const;				///< return true if given distance is too far to see through the fog
+	virtual float		GetFogObscuredRatio(const Vector& target) const;///< return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+	virtual float		GetFogObscuredRatio(CBaseEntity* target) const;	///< return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+	virtual float		GetFogObscuredRatio(float range) const;		///< return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+
+	// -----------------------
+	// Vision
+	// -----------------------
+	enum FieldOfViewCheckType { USE_FOV, DISREGARD_FOV };
+
+	// Visible starts with line of sight, and adds all the extra game checks like fog, smoke, camo...
+	bool IsAbleToSee(const CBaseEntity* entity, FieldOfViewCheckType checkFOV);
+	bool IsAbleToSee(CBaseCombatCharacter* pBCC, FieldOfViewCheckType checkFOV);
+
+	virtual bool IsLookingTowards(const CBaseEntity* target, float cosTolerance = BCC_DEFAULT_LOOK_TOWARDS_TOLERANCE) const;	// return true if our view direction is pointing at the given target, within the cosine of the angular tolerance. LINE OF SIGHT IS NOT CHECKED.
+	virtual bool IsLookingTowards(const Vector& target, float cosTolerance = BCC_DEFAULT_LOOK_TOWARDS_TOLERANCE) const;	// return true if our view direction is pointing at the given target, within the cosine of the angular tolerance. LINE OF SIGHT IS NOT CHECKED.
+
+	virtual bool IsInFieldOfView(CBaseEntity* entity) const;	// Calls IsLookingTowards with the current field of view.  
+	virtual bool IsInFieldOfView(const Vector& pos) const;
+
+	enum LineOfSightCheckType
+	{
+		IGNORE_NOTHING,
+		IGNORE_ACTORS
+	};
+	virtual bool IsLineOfSightClear(CBaseEntity* entity, LineOfSightCheckType checkType = IGNORE_NOTHING) const;// strictly LOS check with no other considerations
+	virtual bool IsLineOfSightClear(const Vector& pos, LineOfSightCheckType checkType = IGNORE_NOTHING, CBaseEntity* entityToIgnore = NULL) const;
 
 
 	// -----------------------
@@ -417,6 +451,11 @@ protected:
 
 public:
 	static int					GetInteractionID();	// Returns the next interaction #
+
+
+protected:
+	// Visibility-related stuff
+	bool ComputeLOS(const Vector& vecEyePosition, const Vector& vecTarget) const;
 
 private:
 	// For weapon strip

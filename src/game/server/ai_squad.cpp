@@ -149,6 +149,8 @@ BEGIN_SIMPLE_DATADESC( CAI_Squad )
 	DEFINE_EMBEDDED( m_squadSlotsUsed ),
 #endif
 
+	DEFINE_FIELD(m_hPlayerCommander, FIELD_EHANDLE),
+
 END_DATADESC()
 
 //-------------------------------------
@@ -263,7 +265,7 @@ void CAI_Squad::AddToSquad(CAI_BaseNPC *pNPC)
 
 	if (m_SquadMembers.Count() == MAX_SQUAD_MEMBERS)
 	{
-		DevMsg("Error!! Squad %s is too big!!! Replacing last member\n",this->m_Name);
+		DevMsg("Error!! Squad %s is too big!!! Replacing last member\n", this->m_Name.ToCStr());
 		m_SquadMembers.Remove(m_SquadMembers.Count()-1);
 	}
 	m_SquadMembers.AddToTail(pNPC);
@@ -475,6 +477,31 @@ int	CAI_Squad::NumMembers( bool bIgnoreSilentMembers )
 		}
 	}
 	return ( m_SquadMembers.Count() - nSilentMembers );
+}
+
+CAI_BaseNPC* CAI_Squad::GetMember(int iIndex, bool bIgnoreSilentMembers)
+{
+	if (iIndex < 0 || iIndex >= m_SquadMembers.Count())
+		return nullptr;
+	if (!bIgnoreSilentMembers)
+	{
+		return m_SquadMembers.Element(iIndex);
+	}
+	else
+	{
+		int iCount = 0;
+		int i = 0;
+		for (; i < m_SquadMembers.Count(); i++)
+		{
+			if (!IsSilentMember(m_SquadMembers.Element(i)))
+				iCount++;
+
+			if (iCount > iIndex)
+				break;
+		}
+
+		return iCount >= iIndex ? m_SquadMembers.Element(i) : nullptr;
+	}
 }
 
 //-------------------------------------

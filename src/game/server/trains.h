@@ -117,6 +117,8 @@ public:
 	float GetMaxSpeed() const { return m_maxSpeed; }
 	float GetCurrentSpeed() const { return m_flSpeed; }
 
+	virtual bool IsBaseTrain(void) const { return true; }
+
 private:
 
 	void ArriveAtNode( CPathTrack *pNode );

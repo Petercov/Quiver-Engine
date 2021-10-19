@@ -921,8 +921,15 @@ public:
 	virtual bool	IsNetClient( void ) const { return false; }
 	virtual bool	IsTemplate( void ) { return false; }
 	virtual bool	IsBaseObject( void ) const { return false; }
+	virtual bool	IsBaseTrain(void) const { return false; }
 	bool			IsBSPModel() const;
+	bool			IsCombatCharacter() { return MyCombatCharacterPointer() == NULL ? false : true; }
 	bool			IsInWorld( void ) const;
+	virtual bool	IsCombatItem(void) const { return false; }
+
+	virtual bool	IsBaseCombatWeapon(void) const { return false; }
+	virtual bool	IsWearable(void) const { return false; }
+	virtual CBaseCombatWeapon* MyCombatWeaponPointer(void) { return NULL; }
 
 	// If this is a vehicle, returns the vehicle interface
 	virtual IServerVehicle*			GetServerVehicle() { return NULL; }

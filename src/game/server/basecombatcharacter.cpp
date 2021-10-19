@@ -3817,3 +3817,81 @@ void CBaseCombatCharacter::OnRestore()
 	RagdollSetupCollisions(m_ragdoll, modelinfo->GetVCollide(GetModelIndex()), GetModelIndex());
 	VPhysicsUpdate(VPhysicsGetObject());
 }
+
+//-----------------------------------------------------------------------------
+// Purpose: return true if given target cant be seen because of fog
+//-----------------------------------------------------------------------------
+bool CBaseCombatCharacter::IsHiddenByFog(const Vector& target) const
+{
+	float range = EyePosition().DistTo(target);
+	return IsHiddenByFog(range);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: return true if given target cant be seen because of fog
+//-----------------------------------------------------------------------------
+bool CBaseCombatCharacter::IsHiddenByFog(CBaseEntity* target) const
+{
+	if (!target)
+		return false;
+
+	float range = EyePosition().DistTo(target->WorldSpaceCenter());
+	return IsHiddenByFog(range);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: return true if given target cant be seen because of fog
+//-----------------------------------------------------------------------------
+bool CBaseCombatCharacter::IsHiddenByFog(float range) const
+{
+	if (GetFogObscuredRatio(range) >= 1.0f)
+		return true;
+
+	return false;
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+//-----------------------------------------------------------------------------
+float CBaseCombatCharacter::GetFogObscuredRatio(const Vector& target) const
+{
+	float range = EyePosition().DistTo(target);
+	return GetFogObscuredRatio(range);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+//-----------------------------------------------------------------------------
+float CBaseCombatCharacter::GetFogObscuredRatio(CBaseEntity* target) const
+{
+	if (!target)
+		return false;
+
+	float range = EyePosition().DistTo(target->WorldSpaceCenter());
+	return GetFogObscuredRatio(range);
+}
+
+//-----------------------------------------------------------------------------
+// Purpose: return 0-1 ratio where zero is not obscured, and 1 is completely obscured
+//-----------------------------------------------------------------------------
+float CBaseCombatCharacter::GetFogObscuredRatio(float range) const
+{
+	/* TODO: Get global fog from map somehow since nav mesh fog is gone
+		fogparams_t fog;
+		GetFogParams( &fog );
+
+		if ( !fog.enable )
+			return 0.0f;
+
+		if ( range <= fog.start )
+			return 0.0f;
+
+		if ( range >= fog.end )
+			return 1.0f;
+
+		float ratio = (range - fog.start) / (fog.end - fog.start);
+		ratio = MIN( ratio, fog.maxdensity );
+		return ratio;
+	*/
+	return 0.0f;
+}

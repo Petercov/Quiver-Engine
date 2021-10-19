@@ -1644,7 +1644,7 @@ bool CAI_BlendedMotor::AddTurnGesture( float flYD )
 {
 
 	// some funky bug with human turn gestures, disable for now
-	return false;
+	//return false;
 
 	// try using a turn gesture
 	Activity activity = ACT_INVALID;
